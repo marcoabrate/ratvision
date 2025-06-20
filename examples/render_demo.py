@@ -1,13 +1,15 @@
 from ratvision import Renderer
 
+import os
 import json
 import argparse
 
 def main(blender_exec: str):
     # load dummy positions and head_directions of simulated rat
-    with open('./positions.json', 'r') as f:
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    with open(os.path.join(script_dir, 'positions.json'), 'r') as f:
         positions = json.load(f)
-    with open('./head_directions.json', 'r') as f:
+    with open(os.path.join(script_dir, 'head_directions.json'), 'r') as f:
         head_directions = json.load(f)
 
     # print the config description
@@ -24,7 +26,7 @@ def main(blender_exec: str):
 
     # get the video animation and save it
     anim = r.get_video_animation()
-    anim.save("animation.mp4")
+    anim.save("./output/animation.mp4")
 
 if __name__ == "__main__":
     argparser = argparse.ArgumentParser(description='Render a video using ratvision.')

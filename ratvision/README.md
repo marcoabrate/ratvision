@@ -4,13 +4,19 @@ A Python library for simulating rat vision through 3D rendering.
 
 ratvision provides a simple interface to render what a rat would see based on its position and head direction in a 3D environment. It uses Blender for the 3D rendering process, making it possible to create realistic simulations of a rat's visual perspective.
 
-### Installation and quick start
+### Installation
 
 ```bash
 pip install ratvision
 ```
+Or by cloning this repository:
+```bash
+git clone git@github.com:marcoabrate/ratvision.git
+cd ratvision
+pip install .
+```
 
-Usage:
+### Usage
 ```python
 renderer = Renderer(blender_exec='/path/to/Blender')
 
@@ -19,10 +25,11 @@ renderer = Renderer(blender_exec='/path/to/Blender')
 renderer.render(positions, head_directions)
 ```
 
-See `examples/render_demo.py` for a thorough example. You can also run the example with:
+See `examples/render_demo.py` for a thorough example. After cloning this repository, you can run the demo with:
 ```python
-python -m examples.render_demo --blender_exec "/path/to/Blender"
+python examples/render_demo.py --blender_exec "/path/to/Blender"
 ```
+Rendered frames and an animation `animation.mp4` will be saved to a new `output` directory.
 
 #### Requirements
 

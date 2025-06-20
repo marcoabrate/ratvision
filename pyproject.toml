@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ratvision"
-version = "0.1"
+version = "0.1.0"
 authors = [
   { name="Marco P. Abrate", email="marco.abrate@ucl.ac.uk" },
 ]
