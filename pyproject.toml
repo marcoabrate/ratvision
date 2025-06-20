@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "ratvision"
 version = "0.1.0"
 authors = [
-  { name="Marco P. Abrate", email="marco.abrate@ucl.ac.uk" },
+  { name="Marco P. Abrate", email="marcopietro.abrate@gmail.com" },
 ]
 description = "A simple package for rat vision rendering simulation."
 readme = "README.md"

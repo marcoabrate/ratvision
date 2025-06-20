@@ -80,4 +80,4 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 ### Author
 
 Marco P. Abrate
-[marco.abrate@ucl.ac.uk](mailto:marco.abrate@ucl.ac.uk)
+[marcopietro.abrate@gmail.com](mailto:marcopietro.abrate@gmail.com)
