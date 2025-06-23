@@ -25,7 +25,7 @@ renderer = Renderer(blender_exec='/path/to/Blender')
 renderer.render(positions, head_directions)
 ```
 
-See `examples/render_demo.py` for a thorough example. After cloning this repository, you can run the demo with:
+See `examples/render_demo.py` for a thorough example. After cloning this repository or downloading the `examples` folder, you can run the demo with:
 ```python
 python examples/render_demo.py --blender_exec "/path/to/Blender"
 ```
