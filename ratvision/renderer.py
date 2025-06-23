@@ -2,8 +2,14 @@ import tempfile, os
 import math
 import subprocess
 import json
-from importlib.resources import files
 from typing import List, Dict, Tuple
+
+import sys
+if sys.version_info < (3, 9):
+    import importlib_resources
+    files = importlib_resources.files
+else:
+    from importlib.resources import files
 
 import matplotlib.pyplot as plt
 from matplotlib import animation

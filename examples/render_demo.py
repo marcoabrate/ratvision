@@ -25,8 +25,12 @@ def main(blender_exec: str):
     r.render(positions, head_directions)
 
     # get the video animation and save it
-    anim = r.get_video_animation()
-    anim.save("./output/animation.mp4")
+    try:
+        anim = r.get_video_animation()
+        anim.save("./output/animation.mp4")
+    except Exception as e:
+        print(e)
+        print("you probably refused to render, or you might have some issues with saving matplotlib animations.")
 
 if __name__ == "__main__":
     argparser = argparse.ArgumentParser(description='Render a video using ratvision.')
