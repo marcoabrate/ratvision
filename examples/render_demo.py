@@ -27,7 +27,7 @@ def main(blender_exec: str):
     # get the video animation and save it
     try:
         anim = r.get_video_animation()
-        anim.save("./output/animation.mp4")
+        anim.save("./animation.mp4")
     except Exception as e:
         print(e)
         print("you probably refused to render, or you might have some issues with saving matplotlib animations.")
