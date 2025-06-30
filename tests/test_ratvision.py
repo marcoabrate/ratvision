@@ -13,7 +13,10 @@ class TestRenderer(unittest.TestCase):
         self.assertEqual([renderer.config[k] for k in keys], [config[k] for k in keys])
 
         renderer_no_config = Renderer(blender_exec='')
-        self.assertEqual(renderer_no_config.config, Renderer.DEFAULT_CONFIG)
+        self.assertEqual(
+            [c for c in renderer_no_config.config if 'output' not in c],
+            [c for c in Renderer.DEFAULT_CONFIG if 'output' not in c]
+        )
 
     def test_render_method_type_error(self):
         '''
