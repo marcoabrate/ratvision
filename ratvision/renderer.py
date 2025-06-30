@@ -1,9 +1,10 @@
-import tempfile, os
-import math
-import subprocess
 import json
+import math
+import os
 from pathlib import Path
 import platform
+import subprocess
+import tempfile
 from typing import List, Dict, Tuple
 
 import sys
