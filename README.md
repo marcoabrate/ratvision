@@ -18,7 +18,7 @@ pip install .
 
 ### Usage
 ```python
-renderer = Renderer(blender_exec='/path/to/Blender')
+renderer = Renderer(blender_exec='/path/to/blender') # blender.exe for Win
 
 # positions is List[Tuple[float, float]]
 # head_directions is List[float]
@@ -52,9 +52,9 @@ The renderer can be configured with the following parameters:
 | Parameter | Description | Default |
 |-----------|-------------|---------|
 | `env_file` | Path to Blender environment file | Built-in box |
-| `output_dir` | Directory where rendered frames are saved | `'output'` |
+| `output_dir` | Directory where rendered frames are saved | `./output` |
 | `frame_dim` | Dimensions of the rendered frames (width, height) | `(120, 64)` |
-| `camera_name` | Name of the camera in the Blender scene | `'Camera_main'` |
+| `camera_name` | Name of the camera in the Blender scene | `Camera_main` |
 | `camera_height` | Height of the camera from the ground in meters | `0.035` |
 | `camera_vertical_angle` | Vertical inclination of the camera in radians | `pi/2` |
 

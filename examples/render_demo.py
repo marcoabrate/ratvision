@@ -1,8 +1,9 @@
 from ratvision import Renderer
 
+import argparse
 import os
 import json
-import argparse
+from pathlib import Path
 
 def main(blender_exec: str):
     # load dummy positions and head_directions of simulated rat
@@ -16,7 +17,7 @@ def main(blender_exec: str):
     Renderer.config_description()
 
     # initialize the renderer with the provided Blender command
-    r = Renderer(blender_exec, config={'output_dir': './output'})
+    r = Renderer(blender_exec)
 
     # example of updating the config
     r.update_config({'camera_name': 'Camera_main'})
@@ -38,7 +39,7 @@ if __name__ == "__main__":
         '--blender_exec', type=str, required=True,
         help='''
             Path to the Blender executable. This is required to run the rendering process.
-            Please be aware his may differ from machine to machine!
+            Please be aware his may differ from machine to machine! Path is suggested for Windows users.
             Examples are "/usr/bin/blender" on Linux, or "/Applications/Blender.app/Contents/MacOS/Blender" on MacOS.
         '''
     )

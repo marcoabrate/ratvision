@@ -1,7 +1,10 @@
-import tempfile, os
-import math
-import subprocess
 import json
+import math
+import os
+from pathlib import Path
+import platform
+import subprocess
+import tempfile
 from typing import List, Dict, Tuple
 
 import sys
@@ -17,15 +20,15 @@ from matplotlib import animation
 class Renderer:
     DEFAULT_CONFIG = {
         'env_file': None,
-        'output_dir': 'output',
+        'output_dir': None,
         'frame_dim': (120, 64),
         'camera_name': 'Camera_main',
         'camera_height': 0.035,
         'camera_vertical_angle': math.pi/2,
     }
     CONFIG_DESCRIPTION = {
-        'env_file': 'Path to the Blender environment file (e.g., /your/path/box.blend). If None, the default environment is used.',
-        'output_dir': 'Directory where rendered images will be saved. Default is "output".',
+        'env_file': 'String or Path to the Blender environment file (e.g., /your/path/box.blend). If None, the default environment is used.',
+        'output_dir': 'Path where rendered images will be saved. If None, output will be saved to "./output".',
         'frame_dim': 'Dimensions of the rendered frames (width, height), in pixels.',
         'camera_name': 'Name of the camera in the Blender scene. Default is "Camera_main".',
         'camera_height': 'Height of the camera from the ground in meters. Default is 0.035 meters.',
@@ -39,9 +42,10 @@ class Renderer:
         and retrieve the rendered video animation.
 
         Args:
-            blender_exec (str): Path to the Blender executable. This is required to run the rendering process.
+            blender_exec (str): String containing path to the Blender executable. This is required to run the rendering process.
                 Please be aware his may differ from machine to machine!
-                Examples are "/usr/bin/blender" on Linux, or "/Applications/Blender.app/Contents/MacOS/Blender" on MacOS.
+                Examples are "/usr/bin/blender" on Linux, or "/Applications/Blender.app/Contents/MacOS/Blender" on MacOS or
+                "C:/Program Files/Blender Foundation/Blender/blender.exe" on Windows.
             config (Dict, optional): Configuration dictionary to override default settings. If None, default settings are used.
         '''
 
@@ -51,7 +55,7 @@ class Renderer:
                 '"blender_exec" is not set, please provide the path to the Blender '+
                 'executable in the config before calling the "render" function.'
             )
-        self.blender_exec = blender_exec
+        self.blender_exec = Path(blender_exec)
 
         self.config = self.DEFAULT_CONFIG.copy()
 
@@ -61,6 +65,9 @@ class Renderer:
         else:
             print('[*] no configuration provided, using default.')
             self._print_config_message()
+
+        if self.config['output_dir'] is None:
+            self.config['output_dir'] = os.path.join(os.getcwd(), 'output')
 
     @staticmethod
     def _print_config_message() -> None:
@@ -143,7 +150,7 @@ class Renderer:
 
         # prepare the command to run Blender
         cmd = [
-            self.blender_exec,
+            str(self.blender_exec),
             '--background', self.config['env_file'],
             '--python', blender_script_file,
             '--frame-start', '1',
@@ -153,6 +160,8 @@ class Renderer:
             '--log-level', '0',
             '--', positions_file, head_directions_file, config_file,
         ]
+        if platform.system() == 'Windows':
+            cmd = ['cmd', '/C'] + cmd
         print(f'[+] ready to render rat\'s vision for {n_frames} samples')
         print()
         print('this might take several minutes, depending on your machine')
@@ -209,6 +218,8 @@ class Renderer:
                     print('[*] no environment file provided, using default environment.\n')
                     blender_env_dir = files('ratvision.environments')
                     self.config['env_file'] = blender_env_dir.joinpath('box_messy.blend')
+                elif isinstance(self.config['env_file'], Path):
+                    self.config['env_file'] = str(self.config['env_file'])
 
                 # print configuration to the user
                 self.print_config()
