@@ -35,16 +35,17 @@ class Renderer:
         'camera_vertical_angle': 'Vertical inclination of the camera in radians. Default is pi/2, parallel to the ground.',
     }
 
-    def __init__(self, blender_exec: str | Path, config: Dict = None):
+    def __init__(self, blender_exec: str, config: Dict = None):
         '''
         This Renderer class is the main interface for rendering rat's vision using Blender.
         It allows you to configure the rendering settings, render the rat's vision based on positions and head directions,
         and retrieve the rendered video animation.
 
         Args:
-            blender_exec (str | Path): String or Path to the Blender executable. This is required to run the rendering process.
-                Please be aware his may differ from machine to machine! Path is suggested for Windows users.
-                Examples are "/usr/bin/blender" on Linux, or "/Applications/Blender.app/Contents/MacOS/Blender" on MacOS.
+            blender_exec (str): String containing path to the Blender executable. This is required to run the rendering process.
+                Please be aware his may differ from machine to machine!
+                Examples are "/usr/bin/blender" on Linux, or "/Applications/Blender.app/Contents/MacOS/Blender" on MacOS or
+                "C:/Program Files/Blender Foundation/Blender/blender.exe" on Windows.
             config (Dict, optional): Configuration dictionary to override default settings. If None, default settings are used.
         '''
 
@@ -54,7 +55,7 @@ class Renderer:
                 '"blender_exec" is not set, please provide the path to the Blender '+
                 'executable in the config before calling the "render" function.'
             )
-        self.blender_exec = blender_exec if isinstance(blender_exec, str) else str(blender_exec)
+        self.blender_exec = Path(blender_exec)
 
         self.config = self.DEFAULT_CONFIG.copy()
 
@@ -149,7 +150,7 @@ class Renderer:
 
         # prepare the command to run Blender
         cmd = [
-            self.blender_exec,
+            str(self.blender_exec),
             '--background', self.config['env_file'],
             '--python', blender_script_file,
             '--frame-start', '1',

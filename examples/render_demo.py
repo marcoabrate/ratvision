@@ -17,7 +17,7 @@ def main(blender_exec: str):
     Renderer.config_description()
 
     # initialize the renderer with the provided Blender command
-    r = Renderer(Path(blender_exec))
+    r = Renderer(blender_exec)
 
     # example of updating the config
     r.update_config({'camera_name': 'Camera_main'})
