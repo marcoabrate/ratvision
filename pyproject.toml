@@ -6,14 +6,24 @@ build-backend = "setuptools.build_meta"
 name = "ratvision"
 version = "0.1"
 authors = [
+<<<<<<< Updated upstream
   { name="Marco P. Abrate", email="marco.abrate@ucl.ac.uk" },
+=======
+  { name="Marco P Abrate", email="marcopietro.abrate@gmail.com" },
+>>>>>>> Stashed changes
 ]
 description = "A simple package for rat vision rendering simulation."
 readme = "README.md"
 requires-python = ">=3.7"
 dependencies = [
     "matplotlib",
+<<<<<<< Updated upstream
     "pillow"
+=======
+    "numpy",
+    "pillow",
+    'importlib-resources; python_version<"3.9"',
+>>>>>>> Stashed changes
 ]
 classifiers = [
     "Programming Language :: Python :: 3",

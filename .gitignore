@@ -1,6 +1,11 @@
 # Custom
+<<<<<<< Updated upstream
 examples/output
 **/*.mp4
+=======
+*.mp4
+output
+>>>>>>> Stashed changes
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

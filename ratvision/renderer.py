@@ -11,8 +11,13 @@ from matplotlib import animation
 class Renderer:
     DEFAULT_CONFIG = {
         'env_file': None,
+<<<<<<< Updated upstream
         'output_dir': 'output',
         'frame_dim': (120, 64),
+=======
+        'output_dir': None,
+        'frame_dim': (128, 64),
+>>>>>>> Stashed changes
         'camera_name': 'Camera_main',
         'camera_height': 0.035,
         'camera_vertical_angle': math.pi/2,
@@ -260,7 +265,7 @@ class Renderer:
 
         # initialize the animation's figure
         fig, ax = plt.subplots(1, 1, figsize=(11, 8))
-        im = ax.imshow(frames[0])
+        im = ax.imshow(frames[0], cmap='gray')
         plt.axis('off')
         plt.close()
 
