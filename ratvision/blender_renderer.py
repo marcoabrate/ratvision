@@ -1,3 +1,11 @@
+"""Blender-based photorealistic renderer.
+
+Provides `BlenderRenderer`, which drives an external Blender installation
+to render panoramic rat-eye-view frames using Blender's Cycles engine.
+A default 3-D box environment (``box_messy.blend``) is bundled with the
+package, but any custom ``.blend`` file can be used.
+"""
+
 import tempfile
 import os
 import math
@@ -9,6 +17,20 @@ from PIL import Image
 
 
 class BlenderRenderer:
+    """Photorealistic renderer that delegates to Blender's Cycles engine.
+
+    Requires a working Blender installation whose executable path is passed
+    at construction time.  The renderer writes positions and head directions
+    to temporary files, invokes Blender in background mode, and collects
+    the rendered PNG frames.
+
+    Example::
+
+        renderer = BlenderRenderer('/usr/bin/blender')
+        renderer.render(positions, head_directions)
+        frames = renderer.get_rendered_frames()   # list of PIL Images
+    """
+
     DEFAULT_CONFIG = {
         "env_file": None,
         "output_dir": None,

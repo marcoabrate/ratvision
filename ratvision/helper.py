@@ -1,3 +1,10 @@
+"""Visualisation helpers for ratvision.
+
+Contains utility functions for displaying and exporting rendered frames,
+such as `get_video_animation()` which produces a Matplotlib
+``FuncAnimation`` from a sequence of frames.
+"""
+
 import matplotlib.pyplot as plt
 from matplotlib import animation
 from typing import List

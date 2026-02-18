@@ -1,3 +1,15 @@
+"""Box environment definition and procedural landmark generators.
+
+This module defines the `BoxEnvironment` and `Landmark` dataclasses that
+describe the scene rendered by the ratvision renderers, as well as helper
+functions for loading textures and creating procedural landmarks (circles,
+triangles, striped rectangles).
+
+A convenience function `default_box_environment()` builds the standard
+0.635 m box with real-photo wall and floor textures and three geometric
+landmarks.
+"""
+
 import math
 from typing import List, Optional, Tuple
 from dataclasses import dataclass, field
@@ -108,10 +120,12 @@ def _load_texture(path, blur_sigma=3) -> np.ndarray:
     Load an image file and return a grayscale numpy array in [0, 1].
 
     Args:
-        blur_sigma: If > 0, apply a Gaussian blur with this sigma (in pixels) to the
+        path: Path to the image file.
+        blur_sigma: If > 0, apply a Gaussian blur with this sigma
+            (in pixels) to the loaded image.
 
     Returns:
-        np.ndarray: A 2D numpy array of shape (H, W) with values in [0, 1].
+        A 2-D numpy array of shape ``(H, W)`` with values in [0, 1].
     """
     from PIL import Image
 

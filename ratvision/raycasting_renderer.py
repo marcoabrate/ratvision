@@ -1,3 +1,12 @@
+"""CPU-based analytical raycasting renderer.
+
+Provides `RaycastingRenderer`, a fast renderer that uses equirectangular
+projection and analytical ray–plane intersections to produce grayscale
+frames of a `BoxEnvironment`.  No GPU or external software is required;
+typical throughput exceeds 1 000 frames/s at 32 × 16 resolution on a
+modern CPU.
+"""
+
 import math
 import os
 from typing import Dict, List, Tuple

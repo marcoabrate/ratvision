@@ -18,7 +18,7 @@ Typical usage in a training loop::
     positions = torch.rand(256, 2, device='cuda') * 0.585 + 0.025
     thetas    = torch.rand(256, device='cuda') * 2 * 3.14159 - 3.14159
 
-    frames = BlenderRenderer(positions, thetas)   # (256, 32, 64) on cuda
+    frames = renderer(positions, thetas)   # (256, 32, 64) on cuda
     # feed directly into a CNN: frames.unsqueeze(1) → (256, 1, 32, 64)
 """
 
@@ -90,7 +90,7 @@ class TorchRenderer(nn.Module):
     Example::
 
         renderer = TorchRenderer().to('cuda')
-        frames = BlenderRenderer(positions, thetas)  # (B, H, W) tensor
+        frames = renderer(positions, thetas)  # (B, H, W) tensor
 
     Args:
         env: A :class:`BoxEnvironment` describing the scene.  If *None*,
