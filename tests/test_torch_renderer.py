@@ -9,6 +9,7 @@ import numpy as np
 
 try:
     import torch
+
     _TORCH_AVAILABLE = True
 except ImportError:
     _TORCH_AVAILABLE = False
@@ -17,16 +18,16 @@ from ratvision.raycasting_renderer import (
     RaycastingRenderer,
     BoxEnvironment,
     Landmark,
-    default_box_environment,
 )
 
 
-@unittest.skipUnless(_TORCH_AVAILABLE, 'PyTorch not installed')
+@unittest.skipUnless(_TORCH_AVAILABLE, "PyTorch not installed")
 class TestTorchRenderer(unittest.TestCase):
     """Tests for TorchRenderer."""
 
     def setUp(self):
         from ratvision.torch_renderer import TorchRenderer
+
         self.TorchRenderer = TorchRenderer
 
         self.env = BoxEnvironment(
@@ -41,35 +42,35 @@ class TestTorchRenderer(unittest.TestCase):
         )
         self.renderer = self.TorchRenderer(
             env=self.env,
-            config={'frame_dim': (32, 16)},
+            config={"frame_dim": (32, 16)},
         )
 
     # ---- initialisation ----
 
     def test_default_config(self):
         r = self.TorchRenderer(env=self.env)
-        self.assertEqual(r.config['frame_dim'], (128, 64))
-        self.assertAlmostEqual(r.config['camera_height'], 0.035)
-        self.assertAlmostEqual(r.config['hfov'], 4 * math.pi / 3)
+        self.assertEqual(r.config["frame_dim"], (128, 64))
+        self.assertAlmostEqual(r.config["camera_height"], 0.035)
+        self.assertAlmostEqual(r.config["hfov"], 4 * math.pi / 3)
 
     def test_custom_config(self):
-        config = {'frame_dim': (64, 32), 'camera_height': 0.05}
+        config = {"frame_dim": (64, 32), "camera_height": 0.05}
         r = self.TorchRenderer(env=self.env, config=config)
-        self.assertEqual(r.config['frame_dim'], (64, 32))
-        self.assertAlmostEqual(r.config['camera_height'], 0.05)
+        self.assertEqual(r.config["frame_dim"], (64, 32))
+        self.assertAlmostEqual(r.config["camera_height"], 0.05)
 
     def test_update_config(self):
-        self.renderer.update_config({'frame_dim': (48, 24)})
+        self.renderer.update_config({"frame_dim": (48, 24)})
         self.assertEqual(self.renderer._frame_W, 48)
         self.assertEqual(self.renderer._frame_H, 24)
 
     def test_invalid_config_key(self):
-        self.renderer.update_config({'nonexistent_key': 42})
-        self.assertNotIn('nonexistent_key', self.renderer.config)
+        self.renderer.update_config({"nonexistent_key": 42})
+        self.assertNotIn("nonexistent_key", self.renderer.config)
 
     def test_config_not_dict_raises(self):
         with self.assertRaises(ValueError):
-            self.renderer.update_config('not a dict')
+            self.renderer.update_config("not a dict")
 
     # ---- render_frame ----
 
@@ -101,7 +102,7 @@ class TestTorchRenderer(unittest.TestCase):
         self.assertFalse(torch.allclose(f1, f2))
 
     def test_custom_resolution(self):
-        self.renderer.update_config({'frame_dim': (8, 4)})
+        self.renderer.update_config({"frame_dim": (8, 4)})
         frame = self.renderer.render_frame(0.3, 0.3, 0)
         self.assertEqual(frame.shape, (4, 8))
 
@@ -136,7 +137,7 @@ class TestTorchRenderer(unittest.TestCase):
 
     def test_render_path_type_error(self):
         with self.assertRaises(TypeError):
-            self.renderer.render_path('bad', [0.0])
+            self.renderer.render_path("bad", [0.0])
 
     def test_render_path_value_error(self):
         with self.assertRaises(ValueError):
@@ -151,7 +152,7 @@ class TestTorchRenderer(unittest.TestCase):
             self.renderer.save_frames(positions, hds, output_dir=tmpdir)
             files = sorted(os.listdir(tmpdir))
             self.assertEqual(len(files), 3)
-            self.assertTrue(all(f.endswith('.png') for f in files))
+            self.assertTrue(all(f.endswith(".png") for f in files))
 
     # ---- to_numpy ----
 
@@ -164,14 +165,16 @@ class TestTorchRenderer(unittest.TestCase):
     # ---- dtype config ----
 
     def test_float64_dtype(self):
-        r = self.TorchRenderer(env=self.env, config={'frame_dim': (16, 8)}, dtype=torch.float64)
+        r = self.TorchRenderer(
+            env=self.env, config={"frame_dim": (16, 8)}, dtype=torch.float64
+        )
         frame = r.render_frame(0.3, 0.3, 0)
         self.assertEqual(frame.dtype, torch.float64)
 
     # ---- default textured environment ----
 
     def test_render_with_default_env(self):
-        r = self.TorchRenderer(config={'frame_dim': (16, 8)})
+        r = self.TorchRenderer(config={"frame_dim": (16, 8)})
         frame = r.render_frame(0.3, 0.3, 0)
         self.assertEqual(frame.shape, (8, 16))
         self.assertGreaterEqual(frame.min().item(), 0.0)
@@ -181,6 +184,7 @@ class TestTorchRenderer(unittest.TestCase):
 
     def test_landmark_visible(self):
         """A large white landmark on a wall should produce bright pixels."""
+
         def white_square(u, v):
             c = np.ones_like(u)
             a = np.ones_like(u)
@@ -199,7 +203,7 @@ class TestTorchRenderer(unittest.TestCase):
                 ),
             ],
         )
-        r = self.TorchRenderer(env=env, config={'frame_dim': (32, 16)})
+        r = self.TorchRenderer(env=env, config={"frame_dim": (32, 16)})
         frame = r.render_frame(0.3, 0.1, 0)
         self.assertGreater(frame.max().item(), 0.8)
 
@@ -212,7 +216,7 @@ class TestTorchRenderer(unittest.TestCase):
             floor_color=0.3,
             ceiling_color=0.0,
         )
-        config = {'frame_dim': (32, 16)}
+        config = {"frame_dim": (32, 16)}
         np_renderer = RaycastingRenderer(env=env, config=config)
         torch_renderer = self.TorchRenderer(env=env, config=config, dtype=torch.float64)
 
@@ -220,15 +224,17 @@ class TestTorchRenderer(unittest.TestCase):
             np_frame = np_renderer.render_frame(x, y, theta)
             torch_frame = torch_renderer.render_frame(x, y, theta).cpu().numpy()
             np.testing.assert_allclose(
-                torch_frame, np_frame, atol=1e-6,
-                err_msg=f'Mismatch at position ({x}, {y}, {theta})',
+                torch_frame,
+                np_frame,
+                atol=1e-6,
+                err_msg=f"Mismatch at position ({x}, {y}, {theta})",
             )
 
 
-@unittest.skipUnless(_TORCH_AVAILABLE, 'PyTorch not installed')
+@unittest.skipUnless(_TORCH_AVAILABLE, "PyTorch not installed")
 @unittest.skipUnless(
     _TORCH_AVAILABLE and torch.cuda.is_available(),
-    'CUDA not available',
+    "CUDA not available",
 )
 class TestTorchRendererCUDA(unittest.TestCase):
     """Tests that require a CUDA GPU."""
@@ -237,24 +243,24 @@ class TestTorchRendererCUDA(unittest.TestCase):
         from ratvision.torch_renderer import TorchRenderer
 
         env = BoxEnvironment(wall_color=0.5, floor_color=0.3, ceiling_color=0.0)
-        r = TorchRenderer(env=env, config={'frame_dim': (16, 8)}).to('cuda')
-        pos = torch.tensor([0.3, 0.3], device='cuda')
-        theta = torch.tensor(0.0, device='cuda')
+        r = TorchRenderer(env=env, config={"frame_dim": (16, 8)}).to("cuda")
+        pos = torch.tensor([0.3, 0.3], device="cuda")
+        theta = torch.tensor(0.0, device="cuda")
         frame = r(pos, theta)
-        self.assertEqual(frame.device.type, 'cuda')
+        self.assertEqual(frame.device.type, "cuda")
         self.assertEqual(frame.shape, (1, 8, 16))
 
     def test_batch_on_cuda(self):
         from ratvision.torch_renderer import TorchRenderer
 
         env = BoxEnvironment(wall_color=0.5, floor_color=0.3, ceiling_color=0.0)
-        r = TorchRenderer(env=env, config={'frame_dim': (16, 8)}).to('cuda')
-        positions = torch.rand(64, 2, device='cuda') * 0.5 + 0.05
-        thetas = torch.rand(64, device='cuda') * 2 * math.pi - math.pi
+        r = TorchRenderer(env=env, config={"frame_dim": (16, 8)}).to("cuda")
+        positions = torch.rand(64, 2, device="cuda") * 0.5 + 0.05
+        thetas = torch.rand(64, device="cuda") * 2 * math.pi - math.pi
         frames = r(positions, thetas)
         self.assertEqual(frames.shape, (64, 8, 16))
-        self.assertEqual(frames.device.type, 'cuda')
+        self.assertEqual(frames.device.type, "cuda")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

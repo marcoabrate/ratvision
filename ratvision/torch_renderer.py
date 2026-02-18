@@ -18,7 +18,7 @@ Typical usage in a training loop::
     positions = torch.rand(256, 2, device='cuda') * 0.585 + 0.025
     thetas    = torch.rand(256, device='cuda') * 2 * 3.14159 - 3.14159
 
-    frames = renderer(positions, thetas)   # (256, 32, 64) on cuda
+    frames = BlenderRenderer(positions, thetas)   # (256, 32, 64) on cuda
     # feed directly into a CNN: frames.unsqueeze(1) → (256, 1, 32, 64)
 """
 
@@ -32,7 +32,7 @@ import torch.nn.functional as F
 
 
 # Import environment definition and helpers from the existing module.
-from .raycasting_renderer import (
+from .box_environment import (
     BoxEnvironment,
     Landmark,
     default_box_environment,
@@ -42,6 +42,7 @@ from .raycasting_renderer import (
 # ---------------------------------------------------------------------------
 # Landmark pre-rasterisation
 # ---------------------------------------------------------------------------
+
 
 def _rasterise_landmark(
     landmark: Landmark,
@@ -72,6 +73,7 @@ def _rasterise_landmark(
 # TorchRenderer
 # ---------------------------------------------------------------------------
 
+
 class TorchRenderer(nn.Module):
     """GPU-accelerated analytical raycasting renderer for box environments.
 
@@ -88,7 +90,7 @@ class TorchRenderer(nn.Module):
     Example::
 
         renderer = TorchRenderer().to('cuda')
-        frames = renderer(positions, thetas)  # (B, H, W) tensor
+        frames = BlenderRenderer(positions, thetas)  # (B, H, W) tensor
 
     Args:
         env: A :class:`BoxEnvironment` describing the scene.  If *None*,
@@ -106,19 +108,19 @@ class TorchRenderer(nn.Module):
     """
 
     DEFAULT_CONFIG: Dict = {
-        'frame_dim': (128, 64),
-        'camera_height': 0.035,
-        'hfov': 4 * math.pi / 3,   # 240 degrees
-        'vfov': 2 * math.pi / 3,   # 120 degrees
-        'output_dir': None,
+        "frame_dim": (128, 64),
+        "camera_height": 0.035,
+        "hfov": 4 * math.pi / 3,  # 240 degrees
+        "vfov": 2 * math.pi / 3,  # 120 degrees
+        "output_dir": None,
     }
 
     CONFIG_DESCRIPTION: Dict = {
-        'frame_dim': 'Dimensions of the rendered frames (width, height), in pixels.',
-        'camera_height': 'Height of the camera from the ground in metres.  Default 0.035 m.',
-        'hfov': 'Horizontal field of view in radians.  Default 4π/3 (240°).',
-        'vfov': 'Vertical field of view in radians.  Default 2π/3 (120°).',
-        'output_dir': 'Path where rendered images will be saved.  If None, "./output" is used.',
+        "frame_dim": "Dimensions of the rendered frames (width, height), in pixels.",
+        "camera_height": "Height of the camera from the ground in metres.  Default 0.035 m.",
+        "hfov": "Horizontal field of view in radians.  Default 4π/3 (240°).",
+        "vfov": "Vertical field of view in radians.  Default 2π/3 (120°).",
+        "output_dir": 'Path where rendered images will be saved.  If None, "./output" is used.',
     }
 
     def __init__(
@@ -132,7 +134,7 @@ class TorchRenderer(nn.Module):
 
         # ---- environment ----
         if env is None:
-            print('[*] no environment provided, loading default box environment.')
+            print("[*] no environment provided, loading default box environment.")
             env = default_box_environment()
         self._env = env
         self._dtype = dtype
@@ -143,10 +145,10 @@ class TorchRenderer(nn.Module):
         if config is not None:
             self._apply_config(config)
         else:
-            print('[*] no configuration provided, using default.')
+            print("[*] no configuration provided, using default.")
 
-        if self.config['output_dir'] is None:
-            self.config['output_dir'] = os.path.join(os.getcwd(), 'output')
+        if self.config["output_dir"] is None:
+            self.config["output_dir"] = os.path.join(os.getcwd(), "output")
 
         # ---- register all numeric data as buffers ----
         self._register_environment_buffers()
@@ -158,12 +160,12 @@ class TorchRenderer(nn.Module):
 
     def _apply_config(self, config: Dict) -> None:
         if not isinstance(config, dict):
-            raise ValueError('config must be a dictionary.')
+            raise ValueError("config must be a dictionary.")
         for key, value in config.items():
             if key in self.config:
                 self.config[key] = value
             else:
-                print(f'[-] {key} is not a valid configuration key, skipping.')
+                print(f"[-] {key} is not a valid configuration key, skipping.")
 
     def update_config(self, config: Dict) -> None:
         """Update configuration and recompute ray buffers.
@@ -177,15 +179,15 @@ class TorchRenderer(nn.Module):
     @staticmethod
     def config_description() -> None:
         """Print a description of each configuration key."""
-        print('[*] configuration description:')
+        print("[*] configuration description:")
         for key, value in TorchRenderer.CONFIG_DESCRIPTION.items():
-            print(f'\t{key}: {value}')
+            print(f"\t{key}: {value}")
 
     def print_config(self) -> None:
         """Print the current configuration."""
-        print('[*] current configuration:')
+        print("[*] current configuration:")
         for key, value in self.config.items():
-            print(f'\t{key}: {value}')
+            print(f"\t{key}: {value}")
 
     # ------------------------------------------------------------------
     # Buffer registration
@@ -198,12 +200,14 @@ class TorchRenderer(nn.Module):
 
         # ---- scalar geometry ----
         self.register_buffer(
-            '_box_dims',
+            "_box_dims",
             torch.tensor([env.width, env.depth, env.height], dtype=dtype),
         )
         self.register_buffer(
-            '_surface_colors',
-            torch.tensor([env.wall_color, env.floor_color, env.ceiling_color], dtype=dtype),
+            "_surface_colors",
+            torch.tensor(
+                [env.wall_color, env.floor_color, env.ceiling_color], dtype=dtype
+            ),
         )
 
         # ---- wall textures ----
@@ -211,11 +215,13 @@ class TorchRenderer(nn.Module):
         if env.wall_textures is not None:
             wall_list = []
             for tex in env.wall_textures:
-                t = torch.from_numpy(tex.astype(np.float32 if dtype == torch.float32 else np.float64))
+                t = torch.from_numpy(
+                    tex.astype(np.float32 if dtype == torch.float32 else np.float64)
+                )
                 wall_list.append(t.unsqueeze(0).unsqueeze(0))  # (1, 1, H, W)
             # We store them individually so they can have different sizes.
             for i, wt in enumerate(wall_list):
-                self.register_buffer(f'_wall_tex_{i}', wt.to(dtype))
+                self.register_buffer(f"_wall_tex_{i}", wt.to(dtype))
             self._has_wall_textures = True
             self._n_wall_textures = len(wall_list)
         else:
@@ -224,10 +230,12 @@ class TorchRenderer(nn.Module):
 
         # ---- floor texture ----
         if env.floor_texture is not None:
-            ft = torch.from_numpy(env.floor_texture.astype(
-                np.float32 if dtype == torch.float32 else np.float64
-            ))
-            self.register_buffer('_floor_tex', ft.unsqueeze(0).unsqueeze(0).to(dtype))
+            ft = torch.from_numpy(
+                env.floor_texture.astype(
+                    np.float32 if dtype == torch.float32 else np.float64
+                )
+            )
+            self.register_buffer("_floor_tex", ft.unsqueeze(0).unsqueeze(0).to(dtype))
             self._has_floor_texture = True
         else:
             self._has_floor_texture = False
@@ -237,42 +245,54 @@ class TorchRenderer(nn.Module):
         # normals: (4, 3), origins: (4, 3), u_axes: (4, 3), v_axes: (4, 3)
         # u_extents: (4,), v_extents: (4,)
         w, d, h = env.width, env.depth, env.height
-        normals = torch.tensor([
-            [0.0, -1.0, 0.0],   # wall 0 (north)
-            [0.0,  1.0, 0.0],   # wall 1 (south)
-            [-1.0, 0.0, 0.0],   # wall 2 (east)
-            [1.0,  0.0, 0.0],   # wall 3 (west)
-        ], dtype=dtype)
-        origins = torch.tensor([
-            [0.0, d,   0.0],
-            [w,   0.0, 0.0],
-            [w,   0.0, 0.0],
-            [0.0, d,   0.0],
-        ], dtype=dtype)
-        u_axes = torch.tensor([
-            [1.0,  0.0, 0.0],
-            [-1.0, 0.0, 0.0],
-            [0.0,  1.0, 0.0],
-            [0.0, -1.0, 0.0],
-        ], dtype=dtype)
-        v_axes = torch.tensor([
-            [0.0, 0.0, 1.0],
-            [0.0, 0.0, 1.0],
-            [0.0, 0.0, 1.0],
-            [0.0, 0.0, 1.0],
-        ], dtype=dtype)
+        normals = torch.tensor(
+            [
+                [0.0, -1.0, 0.0],  # wall 0 (north)
+                [0.0, 1.0, 0.0],  # wall 1 (south)
+                [-1.0, 0.0, 0.0],  # wall 2 (east)
+                [1.0, 0.0, 0.0],  # wall 3 (west)
+            ],
+            dtype=dtype,
+        )
+        origins = torch.tensor(
+            [
+                [0.0, d, 0.0],
+                [w, 0.0, 0.0],
+                [w, 0.0, 0.0],
+                [0.0, d, 0.0],
+            ],
+            dtype=dtype,
+        )
+        u_axes = torch.tensor(
+            [
+                [1.0, 0.0, 0.0],
+                [-1.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0],
+                [0.0, -1.0, 0.0],
+            ],
+            dtype=dtype,
+        )
+        v_axes = torch.tensor(
+            [
+                [0.0, 0.0, 1.0],
+                [0.0, 0.0, 1.0],
+                [0.0, 0.0, 1.0],
+                [0.0, 0.0, 1.0],
+            ],
+            dtype=dtype,
+        )
         u_extents = torch.tensor([w, w, d, d], dtype=dtype)
         v_extents = torch.tensor([h, h, h, h], dtype=dtype)
         # d_plane = dot(normal, origin) per wall — shape (4,)
         d_plane = (normals * origins).sum(dim=-1)
 
-        self.register_buffer('_wall_normals', normals)
-        self.register_buffer('_wall_origins', origins)
-        self.register_buffer('_wall_u_axes', u_axes)
-        self.register_buffer('_wall_v_axes', v_axes)
-        self.register_buffer('_wall_u_extents', u_extents)
-        self.register_buffer('_wall_v_extents', v_extents)
-        self.register_buffer('_wall_d_plane', d_plane)
+        self.register_buffer("_wall_normals", normals)
+        self.register_buffer("_wall_origins", origins)
+        self.register_buffer("_wall_u_axes", u_axes)
+        self.register_buffer("_wall_v_axes", v_axes)
+        self.register_buffer("_wall_u_extents", u_extents)
+        self.register_buffer("_wall_v_extents", v_extents)
+        self.register_buffer("_wall_d_plane", d_plane)
 
         # ---- landmarks ----
         # Pre-rasterise each landmark and store metadata.
@@ -280,7 +300,7 @@ class TorchRenderer(nn.Module):
         self._landmark_uv_bounds: List[Tuple[float, float, float, float]] = []
         for i, lm in enumerate(env.landmarks):
             tex = _rasterise_landmark(lm, self._landmark_resolution).to(dtype)
-            self.register_buffer(f'_lm_tex_{i}', tex.unsqueeze(0))  # (1, 2, H, W)
+            self.register_buffer(f"_lm_tex_{i}", tex.unsqueeze(0))  # (1, 2, H, W)
             self._landmark_wall_indices.append(lm.wall_index)
             self._landmark_uv_bounds.append(
                 (lm.uv_min[0], lm.uv_min[1], lm.uv_max[0], lm.uv_max[1])
@@ -289,9 +309,9 @@ class TorchRenderer(nn.Module):
 
     def _register_ray_buffers(self) -> None:
         """Pre-compute per-pixel azimuth and elevation offset buffers."""
-        W, H = self.config['frame_dim']
-        hfov = self.config['hfov']
-        vfov = self.config['vfov']
+        W, H = self.config["frame_dim"]
+        hfov = self.config["hfov"]
+        vfov = self.config["vfov"]
         dtype = self._dtype
 
         col = torch.arange(W, dtype=dtype)
@@ -300,8 +320,8 @@ class TorchRenderer(nn.Module):
         row = torch.arange(H, dtype=dtype)
         delta_el = vfov * (0.5 - row / max(H - 1, 1))  # (H,)
 
-        self.register_buffer('_delta_az', delta_az.unsqueeze(0))   # (1, W)
-        self.register_buffer('_delta_el', delta_el.unsqueeze(-1))  # (H, 1)
+        self.register_buffer("_delta_az", delta_az.unsqueeze(0))  # (1, W)
+        self.register_buffer("_delta_el", delta_el.unsqueeze(-1))  # (H, 1)
         self._frame_W = W
         self._frame_H = H
 
@@ -337,8 +357,8 @@ class TorchRenderer(nn.Module):
         sampled = F.grid_sample(
             texture,
             grid,
-            mode='bilinear',
-            padding_mode='zeros', # TODO: 'border' for cuda
+            mode="bilinear",
+            padding_mode="zeros",  # TODO: 'border' for cuda
             align_corners=True,
         )  # (1, C, 1, N_pixels)
         sampled = sampled.reshape(C, *orig_shape)  # (C, *orig_shape)
@@ -378,7 +398,7 @@ class TorchRenderer(nn.Module):
         dtype = self._dtype
         device = positions.device
 
-        cam_z = torch.tensor(self.config['camera_height'], dtype=dtype, device=device)
+        cam_z = torch.tensor(self.config["camera_height"], dtype=dtype, device=device)
         width = self._box_dims[0]
         depth = self._box_dims[1]
         height = self._box_dims[2]
@@ -389,12 +409,12 @@ class TorchRenderer(nn.Module):
         # ---- ray directions (B, H, W) ----
         theta = head_directions.to(dtype)  # (B,)
         az = theta[:, None, None] + self._delta_az[None, :, :]  # (B, 1, W)
-        el = self._delta_el[None, :, :]                          # (1, H, 1)
+        el = self._delta_el[None, :, :]  # (1, H, 1)
 
         cos_el = torch.cos(el)
-        dx = -torch.sin(az) * cos_el   # (B, H, W)
-        dy =  torch.cos(az) * cos_el   # (B, H, W)
-        dz =  torch.sin(el).expand(B, H, W)  # (B, H, W)
+        dx = -torch.sin(az) * cos_el  # (B, H, W)
+        dy = torch.cos(az) * cos_el  # (B, H, W)
+        dz = torch.sin(el).expand(B, H, W)  # (B, H, W)
 
         # origin: (B, 3)
         ox = positions[:, 0]
@@ -403,26 +423,30 @@ class TorchRenderer(nn.Module):
 
         # ---- output buffers ----
         image = torch.full((B, H, W), ceiling_color.item(), dtype=dtype, device=device)
-        closest_t = torch.full((B, H, W), float('inf'), dtype=dtype, device=device)
+        closest_t = torch.full((B, H, W), float("inf"), dtype=dtype, device=device)
 
         # ---- wall intersections (loop over 4 walls) ----
         for wi in range(4):
-            normal = self._wall_normals[wi]          # (3,)
-            d_pl = self._wall_d_plane[wi]            # scalar
-            u_axis = self._wall_u_axes[wi]           # (3,)
-            v_axis = self._wall_v_axes[wi]           # (3,)
-            w_origin = self._wall_origins[wi]        # (3,)
+            normal = self._wall_normals[wi]  # (3,)
+            d_pl = self._wall_d_plane[wi]  # scalar
+            u_axis = self._wall_u_axes[wi]  # (3,)
+            v_axis = self._wall_v_axes[wi]  # (3,)
+            w_origin = self._wall_origins[wi]  # (3,)
             u_ext = self._wall_u_extents[wi]
             v_ext = self._wall_v_extents[wi]
 
             # denom = dot(normal, ray_dir) — per pixel: (B, H, W)
             denom = normal[0] * dx + normal[1] * dy + normal[2] * dz
             # numer = d_plane - dot(normal, origin) — per frame: (B, 1, 1)
-            numer = (d_pl - (normal[0] * ox + normal[1] * oy + normal[2] * oz))
+            numer = d_pl - (normal[0] * ox + normal[1] * oy + normal[2] * oz)
             numer = numer[:, None, None]
 
             valid = denom.abs() > 1e-12
-            t_hit = torch.where(valid, numer / denom, torch.tensor(float('inf'), dtype=dtype, device=device))
+            t_hit = torch.where(
+                valid,
+                numer / denom,
+                torch.tensor(float("inf"), dtype=dtype, device=device),
+            )
 
             hit_mask = valid & (t_hit > 1e-6) & (t_hit < closest_t)
             if not hit_mask.any():
@@ -437,17 +461,29 @@ class TorchRenderer(nn.Module):
             rel_x = hit_x - w_origin[0]
             rel_y = hit_y - w_origin[1]
             rel_z = hit_z - w_origin[2]
-            u_coord = (rel_x * u_axis[0] + rel_y * u_axis[1] + rel_z * u_axis[2]) / u_ext
-            v_coord = (rel_x * v_axis[0] + rel_y * v_axis[1] + rel_z * v_axis[2]) / v_ext
+            u_coord = (
+                rel_x * u_axis[0] + rel_y * u_axis[1] + rel_z * u_axis[2]
+            ) / u_ext
+            v_coord = (
+                rel_x * v_axis[0] + rel_y * v_axis[1] + rel_z * v_axis[2]
+            ) / v_ext
 
-            on_wall = hit_mask & (u_coord >= 0) & (u_coord <= 1) & (v_coord >= 0) & (v_coord <= 1)
+            on_wall = (
+                hit_mask
+                & (u_coord >= 0)
+                & (u_coord <= 1)
+                & (v_coord >= 0)
+                & (v_coord <= 1)
+            )
             if not on_wall.any():
                 continue
 
             # sample wall texture
             if self._has_wall_textures and wi < self._n_wall_textures:
-                wall_tex = getattr(self, f'_wall_tex_{wi}')  # (1, 1, tex_H, tex_W)
-                color = self._grid_sample_texture(wall_tex, u_coord, v_coord)  # (B, H, W)
+                wall_tex = getattr(self, f"_wall_tex_{wi}")  # (1, 1, tex_H, tex_W)
+                color = self._grid_sample_texture(
+                    wall_tex, u_coord, v_coord
+                )  # (B, H, W)
             else:
                 color = wall_color.expand(B, H, W)
 
@@ -458,12 +494,16 @@ class TorchRenderer(nn.Module):
                 u_min, v_min, u_max, v_max = self._landmark_uv_bounds[li]
                 lm_u = (u_coord - u_min) / (u_max - u_min)
                 lm_v = (v_coord - v_min) / (v_max - v_min)
-                in_bounds = on_wall & (lm_u >= 0) & (lm_u <= 1) & (lm_v >= 0) & (lm_v <= 1)
+                in_bounds = (
+                    on_wall & (lm_u >= 0) & (lm_u <= 1) & (lm_v >= 0) & (lm_v <= 1)
+                )
                 if not in_bounds.any():
                     continue
 
-                lm_tex = getattr(self, f'_lm_tex_{li}')  # (1, 2, lm_H, lm_W)
-                lm_sampled = self._grid_sample_texture(lm_tex, lm_u, lm_v)  # (2, B, H, W)
+                lm_tex = getattr(self, f"_lm_tex_{li}")  # (1, 2, lm_H, lm_W)
+                lm_sampled = self._grid_sample_texture(
+                    lm_tex, lm_u, lm_v
+                )  # (2, B, H, W)
                 lm_color = lm_sampled[0]  # (B, H, W)
                 lm_alpha = lm_sampled[1]  # (B, H, W)
                 blended = lm_alpha * lm_color + (1.0 - lm_alpha) * color
@@ -476,14 +516,17 @@ class TorchRenderer(nn.Module):
         t_floor = torch.where(
             dz.abs() > 1e-12,
             -cam_z / dz,
-            torch.tensor(float('inf'), dtype=dtype, device=device),
+            torch.tensor(float("inf"), dtype=dtype, device=device),
         )
         fx = ox[:, None, None] + t_floor * dx
         fy = oy[:, None, None] + t_floor * dy
         floor_hit = (
-            (t_floor > 1e-6) & (t_floor < closest_t)
-            & (fx >= 0) & (fx <= width)
-            & (fy >= 0) & (fy <= depth)
+            (t_floor > 1e-6)
+            & (t_floor < closest_t)
+            & (fx >= 0)
+            & (fx <= width)
+            & (fy >= 0)
+            & (fy <= depth)
         )
         if floor_hit.any():
             if self._has_floor_texture:
@@ -499,14 +542,17 @@ class TorchRenderer(nn.Module):
         t_ceil = torch.where(
             dz.abs() > 1e-12,
             (height - cam_z) / dz,
-            torch.tensor(float('inf'), dtype=dtype, device=device),
+            torch.tensor(float("inf"), dtype=dtype, device=device),
         )
         cx = ox[:, None, None] + t_ceil * dx
         cy = oy[:, None, None] + t_ceil * dy
         ceil_hit = (
-            (t_ceil > 1e-6) & (t_ceil < closest_t)
-            & (cx >= 0) & (cx <= width)
-            & (cy >= 0) & (cy <= depth)
+            (t_ceil > 1e-6)
+            & (t_ceil < closest_t)
+            & (cx >= 0)
+            & (cx <= width)
+            & (cy >= 0)
+            & (cy <= depth)
         )
         if ceil_hit.any():
             image = torch.where(ceil_hit, ceiling_color, image)
@@ -560,12 +606,18 @@ class TorchRenderer(nn.Module):
         if isinstance(positions, list):
             positions = torch.tensor(positions, dtype=self._dtype, device=device)
         if isinstance(head_directions, list):
-            head_directions = torch.tensor(head_directions, dtype=self._dtype, device=device)
+            head_directions = torch.tensor(
+                head_directions, dtype=self._dtype, device=device
+            )
 
-        if not isinstance(positions, torch.Tensor) or not isinstance(head_directions, torch.Tensor):
-            raise TypeError('positions and head_directions must be lists or tensors.')
+        if not isinstance(positions, torch.Tensor) or not isinstance(
+            head_directions, torch.Tensor
+        ):
+            raise TypeError("positions and head_directions must be lists or tensors.")
         if positions.shape[0] != head_directions.shape[0]:
-            raise ValueError('positions and head_directions must have the same number of elements.')
+            raise ValueError(
+                "positions and head_directions must have the same number of elements."
+            )
 
         return self.forward(positions, head_directions)
 
@@ -590,7 +642,7 @@ class TorchRenderer(nn.Module):
         from PIL import Image
 
         if output_dir is None:
-            output_dir = self.config['output_dir']
+            output_dir = self.config["output_dir"]
         os.makedirs(output_dir, exist_ok=True)
 
         frames = self.render_path(positions, head_directions)
@@ -599,9 +651,9 @@ class TorchRenderer(nn.Module):
         digits = len(str(n_frames))
 
         for i in range(n_frames):
-            fname = f'frame{str(i + 1).zfill(digits)}.png'
+            fname = f"frame{str(i + 1).zfill(digits)}.png"
             img_array = (frames_np[i] * 255).clip(0, 255).astype(np.uint8)
-            Image.fromarray(img_array, mode='L').save(os.path.join(output_dir, fname))
+            Image.fromarray(img_array, mode="L").save(os.path.join(output_dir, fname))
 
         print(f'[+] saved {n_frames} frames to "{output_dir}"')
 

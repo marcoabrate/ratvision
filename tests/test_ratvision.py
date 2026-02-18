@@ -5,44 +5,40 @@ import unittest
 
 import numpy as np
 
-from ratvision.renderer import Renderer
-from ratvision.raycasting_renderer import (
-    RaycastingRenderer,
-    BoxEnvironment,
-    Landmark,
-    default_box_environment,
-)
+from ratvision.blender_renderer import BlenderRenderer
+from ratvision.raycasting_renderer import RaycastingRenderer
+from ratvision.box_environment import BoxEnvironment, Landmark, default_box_environment
 
 
-class TestRenderer(unittest.TestCase):
+class TestBlenderRenderer(unittest.TestCase):
     def test_renderer_initialization(self):
-        '''
+        """
         Test that the Renderer initializes correctly with updated config.
-        '''
-        config = {'output_dir': 'new/output/dir', 'camera_height': 0.04}
-        renderer = Renderer(blender_exec='', config=config)
+        """
+        config = {"output_dir": "new/output/dir", "camera_height": 0.04}
+        renderer = BlenderRenderer(blender_exec="", config=config)
 
         keys = config.keys()
         self.assertEqual([renderer.config[k] for k in keys], [config[k] for k in keys])
 
-        renderer_no_config = Renderer(blender_exec='')
-        self.assertEqual(renderer_no_config.config, Renderer.DEFAULT_CONFIG)
+        renderer_no_config = BlenderRenderer(blender_exec="")
+        self.assertEqual(renderer_no_config.config, BlenderRenderer.DEFAULT_CONFIG)
 
     def test_render_method_type_error(self):
-        '''
+        """
         Test that render method raises TypeError for invalid inputs.
-        '''
-        renderer = Renderer(blender_exec='')
+        """
+        renderer = BlenderRenderer(blender_exec="")
         with self.assertRaises(TypeError):
-            renderer.render('not a list', [])
+            renderer.render("not a list", [])
         with self.assertRaises(TypeError):
-            renderer.render([], 'not a list')
+            renderer.render([], "not a list")
 
     def test_render_method_value_error(self):
-        '''
+        """
         Test that render method raises ValueError for mismatched list lengths.
-        '''
-        renderer = Renderer(blender_exec='')
+        """
+        renderer = BlenderRenderer(blender_exec="")
         positions = [(0, 0)]
         head_directions = [0, 0]
         with self.assertRaises(ValueError):
@@ -66,7 +62,7 @@ class TestRaycastingRenderer(unittest.TestCase):
         )
         self.renderer = RaycastingRenderer(
             env=self.env,
-            config={'frame_dim': (32, 16)},
+            config={"frame_dim": (32, 16)},
         )
 
     # ---- initialisation ----
@@ -74,33 +70,33 @@ class TestRaycastingRenderer(unittest.TestCase):
     def test_default_config(self):
         """Default config values are set correctly."""
         r = RaycastingRenderer(env=self.env)
-        self.assertEqual(r.config['frame_dim'], (128, 64))
-        self.assertAlmostEqual(r.config['camera_height'], 0.035)
-        self.assertAlmostEqual(r.config['hfov'], 4 * math.pi / 3)
-        self.assertAlmostEqual(r.config['vfov'], 2 * math.pi / 3)
+        self.assertEqual(r.config["frame_dim"], (128, 64))
+        self.assertAlmostEqual(r.config["camera_height"], 0.035)
+        self.assertAlmostEqual(r.config["hfov"], 4 * math.pi / 3)
+        self.assertAlmostEqual(r.config["vfov"], 2 * math.pi / 3)
 
     def test_custom_config(self):
         """Custom config overrides defaults."""
-        config = {'frame_dim': (64, 32), 'camera_height': 0.05}
+        config = {"frame_dim": (64, 32), "camera_height": 0.05}
         r = RaycastingRenderer(env=self.env, config=config)
-        self.assertEqual(r.config['frame_dim'], (64, 32))
-        self.assertAlmostEqual(r.config['camera_height'], 0.05)
+        self.assertEqual(r.config["frame_dim"], (64, 32))
+        self.assertAlmostEqual(r.config["camera_height"], 0.05)
 
     def test_update_config(self):
         """update_config applies new values and recomputes rays."""
-        self.renderer.update_config({'frame_dim': (48, 24)})
+        self.renderer.update_config({"frame_dim": (48, 24)})
         self.assertEqual(self.renderer._frame_W, 48)
         self.assertEqual(self.renderer._frame_H, 24)
 
     def test_invalid_config_key(self):
         """Unknown config keys are silently skipped."""
-        self.renderer.update_config({'nonexistent_key': 42})
-        self.assertNotIn('nonexistent_key', self.renderer.config)
+        self.renderer.update_config({"nonexistent_key": 42})
+        self.assertNotIn("nonexistent_key", self.renderer.config)
 
     def test_config_not_dict_raises(self):
         """Non-dict config raises ValueError."""
         with self.assertRaises(ValueError):
-            self.renderer.update_config('not a dict')
+            self.renderer.update_config("not a dict")
 
     # ---- render_frame ----
 
@@ -134,7 +130,7 @@ class TestRaycastingRenderer(unittest.TestCase):
 
     def test_custom_resolution(self):
         """frame_dim is respected."""
-        self.renderer.update_config({'frame_dim': (8, 4)})
+        self.renderer.update_config({"frame_dim": (8, 4)})
         frame = self.renderer.render_frame(0.3, 0.3, 0)
         self.assertEqual(frame.shape, (4, 8))
 
@@ -150,9 +146,9 @@ class TestRaycastingRenderer(unittest.TestCase):
     def test_render_path_type_error(self):
         """Non-list inputs raise TypeError."""
         with self.assertRaises(TypeError):
-            self.renderer.render_path('bad', [0.0])
+            self.renderer.render_path("bad", [0.0])
         with self.assertRaises(TypeError):
-            self.renderer.render_path([(0, 0)], 'bad')
+            self.renderer.render_path([(0, 0)], "bad")
 
     def test_render_path_value_error(self):
         """Mismatched lengths raise ValueError."""
@@ -169,7 +165,7 @@ class TestRaycastingRenderer(unittest.TestCase):
             self.renderer.save_frames(positions, hds, output_dir=tmpdir)
             files = sorted(os.listdir(tmpdir))
             self.assertEqual(len(files), 3)
-            self.assertTrue(all(f.endswith('.png') for f in files))
+            self.assertTrue(all(f.endswith(".png") for f in files))
 
     # ---- default environment ----
 
@@ -186,7 +182,7 @@ class TestRaycastingRenderer(unittest.TestCase):
 
     def test_render_with_default_env(self):
         """Rendering with the full textured default environment works."""
-        r = RaycastingRenderer(config={'frame_dim': (16, 8)})
+        r = RaycastingRenderer(config={"frame_dim": (16, 8)})
         frame = r.render_frame(0.3, 0.3, 0)
         self.assertEqual(frame.shape, (8, 16))
         self.assertGreaterEqual(frame.min(), 0.0)
@@ -196,6 +192,7 @@ class TestRaycastingRenderer(unittest.TestCase):
 
     def test_landmark_visible(self):
         """A large landmark on a wall should be visible in the rendered frame."""
+
         # Create a white square landmark covering the north wall
         def white_square(u, v):
             c = np.ones_like(u)
@@ -215,14 +212,12 @@ class TestRaycastingRenderer(unittest.TestCase):
                 ),
             ],
         )
-        r = RaycastingRenderer(env=env, config={'frame_dim': (32, 16)})
+        r = RaycastingRenderer(env=env, config={"frame_dim": (32, 16)})
         # Look north from close to south wall → landmark covers many pixels
         frame = r.render_frame(0.3, 0.1, 0)
         # Some pixels should be close to 1.0 (the white landmark)
         self.assertGreater(frame.max(), 0.8)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()
-
-

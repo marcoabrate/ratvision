@@ -10,12 +10,11 @@ authors = [
 ]
 description = "A simple package for rat vision rendering simulation."
 readme = "README.md"
-requires-python = ">=3.7"
+requires-python = ">=3.9"
 dependencies = [
     "matplotlib",
     "numpy",
     "pillow",
-    'importlib-resources; python_version<"3.9"',
 ]
 classifiers = [
     "Programming Language :: Python :: 3",
@@ -26,11 +25,12 @@ keywords = ["vision", "rat", "simulation", "rendering"]
 
 [project.optional-dependencies]
 gpu = ["torch>=2.0"]
+dev = ["pre-commit", "ruff", "pdoc"]
 
 [project.urls]
 Homepage = "https://github.com/marcoabrate/ratvision"
 "Bug Tracker" = "https://github.com/marcoabrate/ratvision/issues"
-Documentation = "https://github.com/marcoabrate/ratvision#readme"
+Documentation = "https://marcoabrate.github.io/ratvision"
 
 [tool.setuptools]
 packages = ["ratvision"]
@@ -39,4 +39,3 @@ packages = ["ratvision"]
 "ratvision" = [
     "environments/**",
 ]
-
