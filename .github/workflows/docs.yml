@@ -27,7 +27,9 @@ jobs:
         with:
           python-version: "3.11"
       - name: Install dependencies
-        run: pip install pdoc .
+        run: |
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install pdoc .
       - name: Build docs (preview only)
         run: pdoc ratvision '!ratvision.blender_script' -o docs
 
@@ -41,7 +43,9 @@ jobs:
         with:
           python-version: "3.11"
       - name: Install dependencies
-        run: pip install pdoc .
+        run: |
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install pdoc .
       - name: Build docs
         run: pdoc ratvision '!ratvision.blender_script' -o docs
       - name: Upload Pages artifact
