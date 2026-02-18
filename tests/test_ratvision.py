@@ -197,7 +197,11 @@ class TestRaycastingRenderer(unittest.TestCase):
     def test_landmark_visible(self):
         """A large landmark on a wall should be visible in the rendered frame."""
         # Create a white square landmark covering the north wall
-        lm_texture = np.ones((4, 4), dtype=np.float64)
+        def white_square(u, v):
+            c = np.ones_like(u)
+            a = np.ones_like(u)
+            return c, a
+
         env = BoxEnvironment(
             wall_color=0.0,
             floor_color=0.0,
@@ -207,8 +211,7 @@ class TestRaycastingRenderer(unittest.TestCase):
                     wall_index=0,
                     uv_min=(0.0, 0.0),
                     uv_max=(1.0, 1.0),
-                    texture=lm_texture,
-                    alpha=np.ones((4, 4), dtype=np.float64),
+                    shape_fn=white_square,
                 ),
             ],
         )

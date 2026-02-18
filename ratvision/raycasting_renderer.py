@@ -6,6 +6,7 @@ from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass, field
 
 import numpy as np
+from scipy.ndimage import gaussian_filter
 
 if sys.version_info < (3, 9):
     import importlib_resources
@@ -23,21 +24,20 @@ from matplotlib import animation
 
 @dataclass
 class Landmark:
-    """A textured landmark placed on a wall.
+    """A landmark placed on a wall, defined by an analytical shape function.
 
     Attributes:
         wall_index: Which wall the landmark is on (0-3).
         uv_min: (u_min, v_min) bottom-left corner in wall-local UV coords [0,1]².
         uv_max: (u_max, v_max) top-right corner in wall-local UV coords [0,1]².
-        texture: Grayscale texture as np.ndarray with values in [0, 1].
-        alpha: Optional alpha mask (same shape as texture). If None, all
-            non-zero texture pixels are considered opaque.
+        shape_fn: A callable ``(u, v) -> (color, alpha)`` where *u*, *v* are
+            ``np.ndarray`` of landmark-local coordinates in [0, 1]².
+            Returns *color* and *alpha* arrays of the same shape, both in [0, 1].
     """
     wall_index: int
     uv_min: Tuple[float, float]
     uv_max: Tuple[float, float]
-    texture: np.ndarray
-    alpha: Optional[np.ndarray] = None
+    shape_fn: object  # Callable[[np.ndarray, np.ndarray], Tuple[np.ndarray, np.ndarray]]
 
 
 @dataclass
@@ -81,11 +81,14 @@ class BoxEnvironment:
 # Texture loading helpers
 # ---------------------------------------------------------------------------
 
-def _load_texture(path) -> np.ndarray:
+def _load_texture(path, blur_sigma=3) -> np.ndarray:
     """Load an image file and return a grayscale numpy array in [0, 1]."""
     from PIL import Image
     img = Image.open(path).convert('L')
-    return np.asarray(img, dtype=np.float64) / 255.0
+    img_np = np.asarray(img, dtype=np.float64) / 255.0
+    if blur_sigma > 0:
+        img_np = gaussian_filter(img_np, sigma=blur_sigma)
+    return img_np
 
 
 def _load_texture_with_alpha(path) -> Tuple[np.ndarray, np.ndarray]:
@@ -114,6 +117,44 @@ def _load_texture_with_alpha(path) -> Tuple[np.ndarray, np.ndarray]:
 # Procedural landmark generators
 # ---------------------------------------------------------------------------
 
+def _compute_uv_region(
+    region_w: float,
+    region_h: float,
+    wall_u_extent: float,
+    wall_v_extent: float,
+    position: str = 'centre',
+) -> Tuple[Tuple[float, float], Tuple[float, float]]:
+    """Compute UV min/max for a landmark region on a wall.
+
+    Args:
+        region_w: Width of the region in metres.
+        region_h: Height of the region in metres.
+        wall_u_extent: Physical width of the wall (metres).
+        wall_v_extent: Physical height of the wall (metres).
+        position: Horizontal placement — ``'left'``, ``'centre'``/``'center'``,
+            or ``'right'``.
+
+    Returns:
+        ``(uv_min, uv_max)`` tuples.
+    """
+    region_u = region_w / wall_u_extent
+    region_v = region_h / wall_v_extent
+
+    if position == 'left':
+        u_min = 0.0
+        u_max = region_u
+    elif position == 'right':
+        u_min = 1.0 - region_u
+        u_max = 1.0
+    else:  # 'centre' / 'center'
+        u_min = 0.5 - region_u / 2
+        u_max = 0.5 + region_u / 2
+
+    v_min = 0.5 - region_v / 2
+    v_max = 0.5 + region_v / 2
+    return (u_min, v_min), (u_max, v_max)
+
+
 def _make_circle_ring_landmark(
     wall_index: int,
     wall_u_extent: float,
@@ -121,9 +162,9 @@ def _make_circle_ring_landmark(
     diameter: float = 0.5,
     stroke: float = 0.1,
     color: float = 1.0,
-    tex_res: int = 256,
+    position: str = 'centre',
 ) -> Landmark:
-    """Create a circle ring (annulus) landmark centred on a wall.
+    """Create a circle ring (annulus) landmark on a wall.
 
     Args:
         wall_index: Index of the wall to place the landmark on.
@@ -132,39 +173,28 @@ def _make_circle_ring_landmark(
         diameter: Outer diameter of the circle (metres).
         stroke: Width of the ring stroke (metres).
         color: Grayscale fill of the ring (0 = black, 1 = white).
-        tex_res: Texture resolution in pixels (square).
+        position: Horizontal placement — ``'left'``, ``'centre'``/``'center'``,
+            or ``'right'``.
     """
     region_w = min(diameter, wall_u_extent)
     region_h = min(diameter, wall_v_extent)
+    uv_min, uv_max = _compute_uv_region(
+        region_w, region_h, wall_u_extent, wall_v_extent, position,
+    )
 
-    u_half = region_w / (2 * wall_u_extent)
-    v_half = region_h / (2 * wall_v_extent)
-    uv_min = (0.5 - u_half, 0.5 - v_half)
-    uv_max = (0.5 + u_half, 0.5 + v_half)
-
-    cols = np.arange(tex_res)
-    rows = np.arange(tex_res)
-    cc, rr = np.meshgrid(cols, rows)
-
-    # World-space coordinates centred at circle centre
-    x = (cc / (tex_res - 1) - 0.5) * region_w
-    y = (0.5 - rr / (tex_res - 1)) * region_h
-
-    dist = np.sqrt(x ** 2 + y ** 2)
     outer_r = diameter / 2
     inner_r = outer_r - stroke
 
-    ring = (dist >= inner_r) & (dist <= outer_r)
-    texture = np.full((tex_res, tex_res), color, dtype=np.float64)
-    alpha = ring.astype(np.float64)
+    def shape_fn(u: np.ndarray, v: np.ndarray):
+        x = (u - 0.5) * region_w
+        y = (v - 0.5) * region_h
+        dist = np.sqrt(x ** 2 + y ** 2)
+        ring = (dist >= inner_r) & (dist <= outer_r)
+        c = np.full_like(u, color)
+        a = ring.astype(np.float64)
+        return c, a
 
-    return Landmark(
-        wall_index=wall_index,
-        uv_min=uv_min,
-        uv_max=uv_max,
-        texture=texture,
-        alpha=alpha,
-    )
+    return Landmark(wall_index=wall_index, uv_min=uv_min, uv_max=uv_max, shape_fn=shape_fn)
 
 
 def _make_triangle_landmark(
@@ -173,8 +203,7 @@ def _make_triangle_landmark(
     wall_v_extent: float,
     tri_height: float = 0.5,
     color: float = 0.0,
-    side: str = 'right',
-    tex_res: int = 256,
+    position: str = 'right',
 ) -> Landmark:
     """Create an equilateral triangle landmark on a wall.
 
@@ -186,56 +215,34 @@ def _make_triangle_landmark(
         wall_v_extent: Physical height of the wall (metres).
         tri_height: Height of the triangle (metres).
         color: Grayscale fill (0 = black, 1 = white).
-        side: Horizontal placement — ``'left'``, ``'right'``, or ``'center'``.
-        tex_res: Texture resolution in pixels (square).
+        position: Horizontal placement — ``'left'``, ``'centre'``/``'center'``,
+            or ``'right'``.
     """
     base = 2 * tri_height / math.sqrt(3)
     region_w = min(base, wall_u_extent)
     region_h = min(tri_height, wall_v_extent)
-
-    region_u = region_w / wall_u_extent
-    region_v = region_h / wall_v_extent
-
-    if side == 'right':
-        uv_min = (1.0 - region_u, 0.5 - region_v / 2)
-        uv_max = (1.0, 0.5 + region_v / 2)
-    elif side == 'left':
-        uv_min = (0.0, 0.5 - region_v / 2)
-        uv_max = (region_u, 0.5 + region_v / 2)
-    else:
-        uv_min = (0.5 - region_u / 2, 0.5 - region_v / 2)
-        uv_max = (0.5 + region_u / 2, 0.5 + region_v / 2)
-
-    cols = np.arange(tex_res)
-    rows = np.arange(tex_res)
-    cc, rr = np.meshgrid(cols, rows)
-
-    u = cc / (tex_res - 1)
-    v = 1.0 - rr / (tex_res - 1)
-
-    # Equilateral triangle: base at bottom (v=0), apex at top (v=1)
-    inside = (u >= 0.5 * v) & (u <= 1.0 - 0.5 * v)
-
-    texture = np.full((tex_res, tex_res), color, dtype=np.float64)
-    alpha = inside.astype(np.float64)
-
-    return Landmark(
-        wall_index=wall_index,
-        uv_min=uv_min,
-        uv_max=uv_max,
-        texture=texture,
-        alpha=alpha,
+    uv_min, uv_max = _compute_uv_region(
+        region_w, region_h, wall_u_extent, wall_v_extent, position,
     )
+
+    def shape_fn(u: np.ndarray, v: np.ndarray):
+        # Equilateral triangle: base at bottom (v=0), apex at top (v=1)
+        inside = (u >= 0.5 * v) & (u <= 1.0 - 0.5 * v)
+        c = np.full_like(u, color)
+        a = inside.astype(np.float64)
+        return c, a
+
+    return Landmark(wall_index=wall_index, uv_min=uv_min, uv_max=uv_max, shape_fn=shape_fn)
 
 
 def _make_striped_rect_landmark(
     wall_index: int,
     wall_u_extent: float,
     wall_v_extent: float,
-    rect_width: float = 0.3,
-    rect_height: float = 0.5,
+    rect_width: float = 0.4,
+    rect_height: float = 0.3,
     stripe_width: float = 0.1,
-    tex_res: int = 256,
+    position: str = 'centre',
 ) -> Landmark:
     """Create a rectangle with diagonal black-and-white stripes.
 
@@ -249,38 +256,27 @@ def _make_striped_rect_landmark(
         rect_width: Width of the rectangle (metres).
         rect_height: Height of the rectangle (metres).
         stripe_width: Perpendicular width of each stripe (metres).
-        tex_res: Texture resolution in pixels (square).
+        position: Horizontal placement — ``'left'``, ``'centre'``/``'center'``,
+            or ``'right'``.
     """
     region_w = min(rect_width, wall_u_extent)
     region_h = min(rect_height, wall_v_extent)
-
-    u_half = region_w / (2 * wall_u_extent)
-    v_half = region_h / (2 * wall_v_extent)
-    uv_min = (0.5 - u_half, 0.5 - v_half)
-    uv_max = (0.5 + u_half, 0.5 + v_half)
-
-    cols = np.arange(tex_res)
-    rows = np.arange(tex_res)
-    cc, rr = np.meshgrid(cols, rows)
-
-    # World-space coordinates inside the rectangle
-    x = cc / (tex_res - 1) * region_w
-    y = (1.0 - rr / (tex_res - 1)) * region_h
-
-    # 45° stripes: project onto the perpendicular direction (1,1)/√2
-    d = (x + y) / math.sqrt(2)
-    stripe_idx = np.floor(d / stripe_width).astype(int) % 2
-
-    texture = np.where(stripe_idx == 0, 1.0, 0.0)
-    alpha = np.ones((tex_res, tex_res), dtype=np.float64)
-
-    return Landmark(
-        wall_index=wall_index,
-        uv_min=uv_min,
-        uv_max=uv_max,
-        texture=texture,
-        alpha=alpha,
+    uv_min, uv_max = _compute_uv_region(
+        region_w, region_h, wall_u_extent, wall_v_extent, position,
     )
+
+    def shape_fn(u: np.ndarray, v: np.ndarray):
+        # Map [0,1]^2 to world-space coordinates inside the rectangle
+        x = u * region_w
+        y = v * region_h
+        # 45° stripes: project onto (1,1)/sqrt(2)
+        d = (x + y) / math.sqrt(2)
+        stripe_idx = np.floor(d / stripe_width).astype(int) % 2
+        c = np.where(stripe_idx == 0, 0.0, 1.0)
+        a = np.ones_like(u)
+        return c, a
+
+    return Landmark(wall_index=wall_index, uv_min=uv_min, uv_max=uv_max, shape_fn=shape_fn)
 
 
 def default_box_environment() -> BoxEnvironment:
@@ -296,35 +292,35 @@ def default_box_environment() -> BoxEnvironment:
 
     # Load wall textures (one per wall: north, south, east, west)
     wall_files = [
-        'wall_texture.jpg',      # wall 0 (north)
-        'wall_concrete1.jpg',    # wall 1 (south)
-        'wall_concrete2.jpg',    # wall 2 (east)
-        'wall_concrete3.webp',   # wall 3 (west)
+        'wall_concrete1_rescaled.png',   # wall 0 (north)
+        'wall_texture_rescaled.png',     # wall 1 (south)
+        'wall_concrete2_rescaled.png',   # wall 2 (east)
+        'wall_concrete3_rescaled.png',   # wall 3 (west)
     ]
     wall_textures = [_load_texture(env_dir.joinpath(f)) for f in wall_files]
 
     # Load floor texture
-    floor_texture = _load_texture(env_dir.joinpath('floor_texture.webp'))
+    floor_texture = _load_texture(env_dir.joinpath('floor_texture_rescaled.png'))
 
     # Generate geometric landmarks
     # Walls 0,1 have u_extent = width; walls 2,3 have u_extent = depth
     w, d, h = 0.635, 0.635, 0.5
 
     landmarks = [
-        # White circle ring centred on wall 0 (north)
-        _make_circle_ring_landmark(
-            wall_index=0, wall_u_extent=w, wall_v_extent=h,
-            diameter=0.5, stroke=0.1, color=1.0,
-        ),
-        # Black equilateral triangle on the side of wall 1 (south)
-        _make_triangle_landmark(
-            wall_index=1, wall_u_extent=w, wall_v_extent=h,
-            tri_height=0.5, color=0.0, side='right',
-        ),
-        # Diagonally striped rectangle centred on wall 2 (east)
+        # Diagonally striped rectangle centred on wall 0 (north)
         _make_striped_rect_landmark(
-            wall_index=2, wall_u_extent=d, wall_v_extent=h,
-            rect_width=0.3, rect_height=0.5, stripe_width=0.1,
+            wall_index=0, wall_u_extent=d, wall_v_extent=h,
+            rect_width=0.4, rect_height=0.3, stripe_width=0.1,
+        ),
+        # White circle ring centred on wall 1 (south)
+        _make_circle_ring_landmark(
+            wall_index=1, wall_u_extent=w, wall_v_extent=h,
+            diameter=0.4, stroke=0.07, color=1.0,
+        ),
+        # Black equilateral triangle on the side of wall 2 (east)
+        _make_triangle_landmark(
+            wall_index=2, wall_u_extent=w, wall_v_extent=h,
+            tri_height=0.4, color=0.0, position='left',
         ),
     ]
 
@@ -644,15 +640,14 @@ class RaycastingRenderer:
                     continue
                 lm_u = (u_coord - lm.uv_min[0]) / (lm.uv_max[0] - lm.uv_min[0])
                 lm_v = (v_coord - lm.uv_min[1]) / (lm.uv_max[1] - lm.uv_min[1])
-                in_bounds = (lm_u >= 0) & (lm_u <= 1) & (lm_v >= 0) & (lm_v <= 1)
-                lm_color = _sample_texture(lm.texture, lm_u, lm_v)
-                if lm.alpha is not None:
-                    lm_alpha = _sample_texture(lm.alpha, lm_u, lm_v)
-                else:
-                    lm_alpha = (lm_color > 0).astype(np.float64)
-                blend_mask = on_wall & in_bounds
+                in_bounds = on_wall & (lm_u >= 0) & (lm_u <= 1) & (lm_v >= 0) & (lm_v <= 1)
+
+                if not np.any(in_bounds):
+                    continue
+
+                lm_color, lm_alpha = lm.shape_fn(lm_u, lm_v)
                 color = np.where(
-                    blend_mask,
+                    in_bounds,
                     lm_alpha * lm_color + (1 - lm_alpha) * color,
                     color,
                 )
