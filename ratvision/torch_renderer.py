@@ -358,7 +358,7 @@ class TorchRenderer(nn.Module):
             texture,
             grid,
             mode="bilinear",
-            padding_mode="zeros",  # TODO: 'border' for cuda
+            padding_mode="border",
             align_corners=True,
         )  # (1, C, 1, N_pixels)
         sampled = sampled.reshape(C, *orig_shape)  # (C, *orig_shape)

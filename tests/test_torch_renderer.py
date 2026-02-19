@@ -14,8 +14,8 @@ try:
 except ImportError:
     _TORCH_AVAILABLE = False
 
-from ratvision.raycasting_renderer import (
-    RaycastingRenderer,
+from ratvision.raycasting_renderer import RaycastingRenderer
+from ratvision.box_environment import (
     BoxEnvironment,
     Landmark,
 )

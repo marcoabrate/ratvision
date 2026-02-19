@@ -125,5 +125,5 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 ### Author
 
-Marco P. Abrate
+Marco P Abrate
 [marcopietro.abrate@gmail.com](mailto:marcopietro.abrate@gmail.com)

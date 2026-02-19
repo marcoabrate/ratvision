@@ -2,6 +2,7 @@
 examples/output
 **/*.mp4
 output
+.vscode
 
 # MacOS
 .DS_Store
