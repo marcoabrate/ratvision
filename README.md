@@ -2,7 +2,11 @@
 
 A Python library for simulating rat vision through 3D rendering.
 
-ratvision provides a simple interface to render what a rat would see based on its position and head direction in a 3D environment. It uses Blender for the 3D rendering process, making it possible to create realistic simulations of a rat's visual perspective.
+ratvision provides a simple interface to render what a rat would see based on its position and head direction in a 3D environment. Three rendering back-ends are available: a **Blender-based** photorealistic renderer, a fast **CPU raycaster**, and a **GPU-accelerated PyTorch** renderer suitable for end-to-end differentiable pipelines.
+
+### Documentation
+
+Full API documentation is available at **[marcoabrate.github.io/ratvision](https://marcoabrate.github.io/ratvision/)**.
 
 ### Installation
 
@@ -15,63 +19,105 @@ git clone git@github.com:marcoabrate/ratvision.git
 cd ratvision
 pip install .
 ```
+For GPU-accelerated rendering with `TorchRenderer` (*Note:* it installs torch):
+```bash
+pip install ratvision[gpu]
+```
 
-### Usage
+### Quick start
+
+**Raycasting renderer** (no external dependencies):
 ```python
-renderer = Renderer(blender_exec='/path/to/blender') # blender.exe for Win
+from ratvision import RaycastingRenderer
 
-# positions is List[Tuple[float, float]]
-# head_directions is List[float]
+renderer = RaycastingRenderer()                    # default box environment
+frame    = renderer.render_frame(0.3, 0.3, 0.0)   # (H, W) numpy array
+frames   = renderer.render_path(positions, head_directions)
+```
+
+**PyTorch renderer** (GPU-accelerated):
+```python
+from ratvision import TorchRenderer
+import torch
+
+renderer = TorchRenderer(config={'frame_dim': (64, 32)}).to('cuda')
+frames   = renderer(positions_tensor, head_directions_tensor)  # (B, H, W) tensor
+```
+
+**Blender renderer** (photorealistic):
+```python
+from ratvision import BlenderRenderer
+
+renderer = BlenderRenderer(blender_exec='/path/to/blender')
 renderer.render(positions, head_directions)
 ```
 
-See `examples/render_demo.py` for a thorough example. After cloning this repository or downloading the `examples` folder, you can run the demo with:
-```python
-python examples/render_demo.py --blender_exec "/path/to/Blender"
+See the `examples/` directory for full runnable demos with each back-end:
+```bash
+python examples/raycasting_render_demo.py
+python examples/torch_render_demo.py
+python examples/blender_render_demo.py --blender_exec "/path/to/Blender"
 ```
-Rendered frames and an animation `animation.mp4` will be saved to a new `output` directory.
 
-#### Requirements
+### Requirements
 
-- Python 3.7+
-- Blender (external dependency, not included in the package)
+- Python 3.9+
+- [Blender](https://www.blender.org/) (only required for `BlenderRenderer`, not included in the package)
 
-The code was tested with Blender 3.6 on Linux and MacOS machines.
+The Blender renderer was tested with Blender 3.6 on Linux and macOS.
 
 ### Features
 
+- Three rendering back-ends (Blender, CPU raycasting, GPU PyTorch)
 - Generate rat-eye-view video animations from movement trajectories
 - Easy to use Python API
-- Compatible with custom 3D environments
-- Built-in visualization function
+- Compatible with custom 3D environments and procedural landmarks
+- Built-in visualisation utilities (`get_video_animation`)
+- GPU batch rendering for training loops (`TorchRenderer`)
 
-### Configuration Options
+### Configuration options
 
-The renderer can be configured with the following parameters:
+Each renderer can be configured with parameters such as:
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `frame_dim` | Dimensions of the rendered frames (width, height) | `(128, 64)` |
+| `camera_height` | Height of the camera from the ground in metres | `0.035` |
+| `hfov` | Horizontal field of view in radians | `4π/3 (240°)` |
+| `vfov` | Vertical field of view in radians | `2π/3 (120°)` |
+| `output_dir` | Directory where rendered frames are saved | `./output` |
+
+Additional Blender-specific options:
 
 | Parameter | Description | Default |
 |-----------|-------------|---------|
 | `env_file` | Path to Blender environment file | Built-in box |
-| `output_dir` | Directory where rendered frames are saved | `./output` |
-| `frame_dim` | Dimensions of the rendered frames (width, height) | `(120, 64)` |
 | `camera_name` | Name of the camera in the Blender scene | `Camera_main` |
-| `camera_height` | Height of the camera from the ground in meters | `0.035` |
-| `camera_vertical_angle` | Vertical inclination of the camera in radians | `pi/2` |
+| `camera_vertical_angle` | Vertical inclination of the camera in radians | `π/2` |
 
-You can view the configuration description by calling:
+You can view and update the configuration at runtime:
+```python
+renderer.config_description()          # print all available keys
+renderer.update_config({'frame_dim': (64, 32)})
+```
+
+### Customisable 3D environment
+
+While ratvision comes with a default 3D environment, you can create custom environments programmatically or use your own Blender files:
 
 ```python
-Renderer.config_description()
+from ratvision import BoxEnvironment, Landmark, RaycastingRenderer
+
+env = BoxEnvironment(width=1.0, depth=1.0, height=0.8, wall_color=0.6)
+renderer = RaycastingRenderer(env=env)
 ```
-### Customizable 3D environment
 
-While ratvision comes with a default 3D environment, you can use your own Blender files:
-
+For Blender-based rendering with a custom `.blend` file:
 ```python
 renderer.update_config({'env_file': '/path/to/environment.blend'})
 ```
 
-__Note:__ All rendering and camera settings defined in the Blender environment will be preserved when rendering with ratvision. Only the parameters that can be set through the config will be overwritten. Be sure to change them to your preference before running ratvision. __For biologically-plausible rendering and camera settings__, you can check the provided environment `environments/box_messy.blend`. 
+> **Note:** All rendering and camera settings defined in the Blender file will be preserved. Only the parameters set through the config will be overwritten. For biologically-plausible rendering and camera settings, check the provided environment `environments/box_messy.blend`.
 
 ### License
 
@@ -79,5 +125,5 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 ### Author
 
-Marco P. Abrate
+Marco P Abrate
 [marcopietro.abrate@gmail.com](mailto:marcopietro.abrate@gmail.com)
