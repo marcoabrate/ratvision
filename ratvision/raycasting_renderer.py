@@ -2,9 +2,9 @@
 
 Provides `RaycastingRenderer`, a fast renderer that uses equirectangular
 projection and analytical ray–plane intersections to produce grayscale
-frames of a `BoxEnvironment`.  No GPU or external software is required;
-typical throughput exceeds 1 000 frames/s at 32 × 16 resolution on a
-modern CPU.
+frames of a `BoxEnvironment` or `PolygonEnvironment`.  No GPU or external
+software is required; typical throughput exceeds 1 000 frames/s at
+32 × 16 resolution on a modern CPU.
 """
 
 import math
@@ -15,6 +15,7 @@ import numpy as np
 
 
 from ratvision.box_environment import BoxEnvironment, default_box_environment
+from ratvision.polygon_environment import PolygonEnvironment
 
 
 # ---------------------------------------------------------------------------
@@ -62,14 +63,17 @@ def _sample_texture(texture: np.ndarray, u: np.ndarray, v: np.ndarray) -> np.nda
 
 
 class RaycastingRenderer:
-    """Fast analytical raycasting renderer for box environments.
+    """Fast analytical raycasting renderer for box and polygon environments.
 
     Uses equirectangular projection to cast rays from the agent position
     and compute wall / floor / ceiling intersections analytically.
     Textures and landmarks are sampled via bilinear interpolation.
 
+    Supports both :class:`BoxEnvironment` (axis-aligned box) and
+    :class:`PolygonEnvironment` (arbitrary polygon floor plan).
+
     This renderer is intended as a fast, Blender-free alternative to
-    :class:`ratvision.BlenderRenderer` for simple box environments.
+    :class:`ratvision.BlenderRenderer` for simple environments.
     Typical throughput is >1000 frames/s at 32x16 resolution on CPU.
 
     Example:
@@ -96,11 +100,12 @@ class RaycastingRenderer:
         "output_dir": 'Path where rendered images will be saved. If None, "./output" is used.',
     }
 
-    def __init__(self, env: BoxEnvironment = None, config: Dict = None):
+    def __init__(self, env=None, config: Dict = None):
         """
         Args:
-            env: A :class:`BoxEnvironment` describing the scene.  If *None*,
-                the built-in default box environment is loaded.
+            env: A :class:`BoxEnvironment` or :class:`PolygonEnvironment`
+                describing the scene.  If *None*, the built-in default box
+                environment is loaded.
             config: Configuration dictionary (see ``config_description()``).
                 If *None*, default settings are used.
         """
@@ -109,6 +114,7 @@ class RaycastingRenderer:
             self.env = default_box_environment()
         else:
             self.env = env
+        self._is_polygon = isinstance(self.env, PolygonEnvironment)
 
         self.config = self.DEFAULT_CONFIG.copy()
         if config is not None:
@@ -194,29 +200,33 @@ class RaycastingRenderer:
     def _wall_planes(self):
         """Return wall plane definitions.
 
-        Each entry: (normal, point_on_plane, u_axis, v_axis,
-                     wall_origin, u_extent, v_extent, wall_index)
+        Each entry: (normal, wall_origin, u_axis, v_axis,
+                     u_extent, v_extent, wall_index)
 
         UV convention per wall:
           - u runs along the wall (0 → 1), v runs up (0 = floor, 1 = top).
           - wall_origin is the corner where (u, v) = (0, 0).
+
+        For :class:`PolygonEnvironment`, delegates to
+        ``env.wall_planes()``.  For :class:`BoxEnvironment`, builds the
+        four axis-aligned wall planes from width / depth / height.
         """
+        if self._is_polygon:
+            return self.env.wall_planes()
+
         w, d, h = self.env.width, self.env.depth, self.env.height
 
         # Wall 0 (north): y = depth, faces -Y
-        # Looking at this wall from inside, left is +X direction.
-        # u: 0 at x=0, 1 at x=w  →  u_axis = (+1, 0, 0)
         wall0 = (
-            np.array([0.0, -1.0, 0.0]),  # normal (inward)
-            np.array([0.0, d, 0.0]),  # wall_origin (u=0, v=0)
-            np.array([1.0, 0.0, 0.0]),  # u_axis
-            np.array([0.0, 0.0, 1.0]),  # v_axis
+            np.array([0.0, -1.0, 0.0]),
+            np.array([0.0, d, 0.0]),
+            np.array([1.0, 0.0, 0.0]),
+            np.array([0.0, 0.0, 1.0]),
             w,
             h,
             0,
         )
         # Wall 1 (south): y = 0, faces +Y
-        # Looking at this wall from inside, left is -X direction.
         wall1 = (
             np.array([0.0, 1.0, 0.0]),
             np.array([w, 0.0, 0.0]),
@@ -227,7 +237,6 @@ class RaycastingRenderer:
             1,
         )
         # Wall 2 (east): x = width, faces -X
-        # Looking from inside, left is +Y direction.
         wall2 = (
             np.array([-1.0, 0.0, 0.0]),
             np.array([w, 0.0, 0.0]),
@@ -238,7 +247,6 @@ class RaycastingRenderer:
             2,
         )
         # Wall 3 (west): x = 0, faces +X
-        # Looking from inside, left is -Y direction.
         wall3 = (
             np.array([1.0, 0.0, 0.0]),
             np.array([0.0, d, 0.0]),
@@ -366,18 +374,23 @@ class RaycastingRenderer:
             )
         fx = origin[0] + t_floor * dx
         fy = origin[1] + t_floor * dy
-        floor_hit = (
-            (t_floor > 1e-6)
-            & (t_floor < closest_t)
-            & (fx >= 0)
-            & (fx <= self.env.width)
-            & (fy >= 0)
-            & (fy <= self.env.depth)
-        )
+        if self._is_polygon:
+            floor_in_bounds = self.env.point_in_polygon(fx, fy)
+        else:
+            floor_in_bounds = (
+                (fx >= 0) & (fx <= self.env.width)
+                & (fy >= 0) & (fy <= self.env.depth)
+            )
+        floor_hit = (t_floor > 1e-6) & (t_floor < closest_t) & floor_in_bounds
         if np.any(floor_hit):
             if self.env.floor_texture is not None:
-                fu = fx / self.env.width
-                fv = fy / self.env.depth
+                if self._is_polygon:
+                    x_min, y_min, x_max, y_max = self.env.bounding_box
+                    fu = (fx - x_min) / self.env.bb_width
+                    fv = (fy - y_min) / self.env.bb_depth
+                else:
+                    fu = fx / self.env.width
+                    fv = fy / self.env.depth
                 floor_color = _sample_texture(self.env.floor_texture, fu, fv)
                 image[floor_hit] = floor_color[floor_hit]
             else:
@@ -393,14 +406,14 @@ class RaycastingRenderer:
             )
         cx = origin[0] + t_ceil * dx
         cy = origin[1] + t_ceil * dy
-        ceil_hit = (
-            (t_ceil > 1e-6)
-            & (t_ceil < closest_t)
-            & (cx >= 0)
-            & (cx <= self.env.width)
-            & (cy >= 0)
-            & (cy <= self.env.depth)
-        )
+        if self._is_polygon:
+            ceil_in_bounds = self.env.point_in_polygon(cx, cy)
+        else:
+            ceil_in_bounds = (
+                (cx >= 0) & (cx <= self.env.width)
+                & (cy >= 0) & (cy <= self.env.depth)
+            )
+        ceil_hit = (t_ceil > 1e-6) & (t_ceil < closest_t) & ceil_in_bounds
         if np.any(ceil_hit):
             image[ceil_hit] = self.env.ceiling_color
 
