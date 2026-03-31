@@ -37,6 +37,7 @@ from .box_environment import (
     Landmark,
     default_box_environment,
 )
+from .polygon_environment import PolygonEnvironment
 
 
 # ---------------------------------------------------------------------------
@@ -75,13 +76,16 @@ def _rasterise_landmark(
 
 
 class TorchRenderer(nn.Module):
-    """GPU-accelerated analytical raycasting renderer for box environments.
+    """GPU-accelerated analytical raycasting renderer for box and polygon environments.
 
     This is a ``torch.nn.Module`` counterpart of
     :class:`~ratvision.raycasting_renderer.RaycastingRenderer`.  It uses
     equirectangular projection to cast rays from agent positions and
     computes wall / floor / ceiling intersections analytically.  Textures
     are sampled via ``torch.nn.functional.grid_sample`` (bilinear).
+
+    Supports both :class:`BoxEnvironment` (axis-aligned box) and
+    :class:`PolygonEnvironment` (arbitrary polygon floor plan).
 
     Call the module directly (``forward``) with batched positions and
     head directions to get a batch of rendered frames as a tensor on the
@@ -93,8 +97,9 @@ class TorchRenderer(nn.Module):
         frames = renderer(positions, thetas)  # (B, H, W) tensor
 
     Args:
-        env: A :class:`BoxEnvironment` describing the scene.  If *None*,
-            the built-in default box environment is loaded.
+        env: A :class:`BoxEnvironment` or :class:`PolygonEnvironment`
+            describing the scene.  If *None*, the built-in default box
+            environment is loaded.
         config: Configuration dictionary.  Supported keys:
 
             - ``frame_dim``: ``(width, height)`` in pixels.  Default ``(128, 64)``.
@@ -125,7 +130,7 @@ class TorchRenderer(nn.Module):
 
     def __init__(
         self,
-        env: Optional[BoxEnvironment] = None,
+        env=None,
         config: Optional[Dict] = None,
         dtype: torch.dtype = torch.float32,
         landmark_resolution: int = 128,
@@ -137,6 +142,7 @@ class TorchRenderer(nn.Module):
             print("[*] no environment provided, loading default box environment.")
             env = default_box_environment()
         self._env = env
+        self._is_polygon = isinstance(env, PolygonEnvironment)
         self._dtype = dtype
         self._landmark_resolution = landmark_resolution
 
@@ -199,10 +205,30 @@ class TorchRenderer(nn.Module):
         dtype = self._dtype
 
         # ---- scalar geometry ----
-        self.register_buffer(
-            "_box_dims",
-            torch.tensor([env.width, env.depth, env.height], dtype=dtype),
-        )
+        if self._is_polygon:
+            x_min, y_min, x_max, y_max = env.bounding_box
+            self.register_buffer(
+                "_box_dims",
+                torch.tensor(
+                    [x_max - x_min, y_max - y_min, env.height], dtype=dtype
+                ),
+            )
+            self.register_buffer(
+                "_bb_origin",
+                torch.tensor([x_min, y_min], dtype=dtype),
+            )
+            # Store polygon vertices for point-in-polygon test: (N, 2)
+            verts_np = np.array(env.vertices, dtype=np.float64)
+            self.register_buffer(
+                "_poly_verts",
+                torch.from_numpy(verts_np).to(dtype),
+            )
+            self._n_poly_verts = len(env.vertices)
+        else:
+            self.register_buffer(
+                "_box_dims",
+                torch.tensor([env.width, env.depth, env.height], dtype=dtype),
+            )
         self.register_buffer(
             "_surface_colors",
             torch.tensor(
@@ -211,7 +237,6 @@ class TorchRenderer(nn.Module):
         )
 
         # ---- wall textures ----
-        # Stored as (4, 1, tex_H, tex_W) for grid_sample — or None flag.
         if env.wall_textures is not None:
             wall_list = []
             for tex in env.wall_textures:
@@ -219,7 +244,6 @@ class TorchRenderer(nn.Module):
                     tex.astype(np.float32 if dtype == torch.float32 else np.float64)
                 )
                 wall_list.append(t.unsqueeze(0).unsqueeze(0))  # (1, 1, H, W)
-            # We store them individually so they can have different sizes.
             for i, wt in enumerate(wall_list):
                 self.register_buffer(f"_wall_tex_{i}", wt.to(dtype))
             self._has_wall_textures = True
@@ -241,49 +265,40 @@ class TorchRenderer(nn.Module):
             self._has_floor_texture = False
 
         # ---- wall geometry ----
-        # Pack into tensors for vectorised intersection.
-        # normals: (4, 3), origins: (4, 3), u_axes: (4, 3), v_axes: (4, 3)
-        # u_extents: (4,), v_extents: (4,)
-        w, d, h = env.width, env.depth, env.height
-        normals = torch.tensor(
-            [
-                [0.0, -1.0, 0.0],  # wall 0 (north)
-                [0.0, 1.0, 0.0],  # wall 1 (south)
-                [-1.0, 0.0, 0.0],  # wall 2 (east)
-                [1.0, 0.0, 0.0],  # wall 3 (west)
-            ],
-            dtype=dtype,
-        )
-        origins = torch.tensor(
-            [
-                [0.0, d, 0.0],
-                [w, 0.0, 0.0],
-                [w, 0.0, 0.0],
-                [0.0, d, 0.0],
-            ],
-            dtype=dtype,
-        )
-        u_axes = torch.tensor(
-            [
-                [1.0, 0.0, 0.0],
-                [-1.0, 0.0, 0.0],
-                [0.0, 1.0, 0.0],
-                [0.0, -1.0, 0.0],
-            ],
-            dtype=dtype,
-        )
-        v_axes = torch.tensor(
-            [
-                [0.0, 0.0, 1.0],
-                [0.0, 0.0, 1.0],
-                [0.0, 0.0, 1.0],
-                [0.0, 0.0, 1.0],
-            ],
-            dtype=dtype,
-        )
-        u_extents = torch.tensor([w, w, d, d], dtype=dtype)
-        v_extents = torch.tensor([h, h, h, h], dtype=dtype)
-        # d_plane = dot(normal, origin) per wall — shape (4,)
+        # Build wall plane tensors from the environment.
+        if self._is_polygon:
+            planes = env.wall_planes()
+        else:
+            w, d, h = env.width, env.depth, env.height
+            planes = [
+                (np.array([0., -1., 0.]), np.array([0., d, 0.]),
+                 np.array([1., 0., 0.]), np.array([0., 0., 1.]), w, h, 0),
+                (np.array([0., 1., 0.]), np.array([w, 0., 0.]),
+                 np.array([-1., 0., 0.]), np.array([0., 0., 1.]), w, h, 1),
+                (np.array([-1., 0., 0.]), np.array([w, 0., 0.]),
+                 np.array([0., 1., 0.]), np.array([0., 0., 1.]), d, h, 2),
+                (np.array([1., 0., 0.]), np.array([0., d, 0.]),
+                 np.array([0., -1., 0.]), np.array([0., 0., 1.]), d, h, 3),
+            ]
+
+        n_walls = len(planes)
+        self._n_walls = n_walls
+        normals_list, origins_list, u_axes_list, v_axes_list = [], [], [], []
+        u_ext_list, v_ext_list = [], []
+        for normal, origin, u_axis, v_axis, u_ext, v_ext, _ in planes:
+            normals_list.append(normal)
+            origins_list.append(origin)
+            u_axes_list.append(u_axis)
+            v_axes_list.append(v_axis)
+            u_ext_list.append(u_ext)
+            v_ext_list.append(v_ext)
+
+        normals = torch.tensor(np.array(normals_list), dtype=dtype)
+        origins = torch.tensor(np.array(origins_list), dtype=dtype)
+        u_axes = torch.tensor(np.array(u_axes_list), dtype=dtype)
+        v_axes = torch.tensor(np.array(v_axes_list), dtype=dtype)
+        u_extents = torch.tensor(u_ext_list, dtype=dtype)
+        v_extents = torch.tensor(v_ext_list, dtype=dtype)
         d_plane = (normals * origins).sum(dim=-1)
 
         self.register_buffer("_wall_normals", normals)
@@ -295,7 +310,6 @@ class TorchRenderer(nn.Module):
         self.register_buffer("_wall_d_plane", d_plane)
 
         # ---- landmarks ----
-        # Pre-rasterise each landmark and store metadata.
         self._landmark_wall_indices: List[int] = []
         self._landmark_uv_bounds: List[Tuple[float, float, float, float]] = []
         for i, lm in enumerate(env.landmarks):
@@ -367,6 +381,35 @@ class TorchRenderer(nn.Module):
         return sampled
 
     # ------------------------------------------------------------------
+    # Point-in-polygon (torch)
+    # ------------------------------------------------------------------
+
+    def _point_in_polygon(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+        """Vectorised ray-casting point-in-polygon test.
+
+        Args:
+            x: Tensor of x-coordinates (any shape).
+            y: Tensor of y-coordinates (same shape as *x*).
+
+        Returns:
+            Boolean tensor, ``True`` where the point is inside the polygon.
+        """
+        verts = self._poly_verts  # (N, 2)
+        n = self._n_poly_verts
+        inside = torch.zeros_like(x, dtype=torch.bool)
+        for i in range(n):
+            x0, y0 = verts[i, 0], verts[i, 1]
+            x1, y1 = verts[(i + 1) % n, 0], verts[(i + 1) % n, 1]
+            cond = ((y0 <= y) & (y < y1)) | ((y1 <= y) & (y < y0))
+            x_intersect = torch.where(
+                cond,
+                x0 + (y - y0) * (x1 - x0) / (y1 - y0),
+                torch.tensor(float("-inf"), dtype=x.dtype, device=x.device),
+            )
+            inside = inside ^ (cond & (x < x_intersect))
+        return inside
+
+    # ------------------------------------------------------------------
     # Core rendering
     # ------------------------------------------------------------------
 
@@ -425,8 +468,8 @@ class TorchRenderer(nn.Module):
         image = torch.full((B, H, W), ceiling_color.item(), dtype=dtype, device=device)
         closest_t = torch.full((B, H, W), float("inf"), dtype=dtype, device=device)
 
-        # ---- wall intersections (loop over 4 walls) ----
-        for wi in range(4):
+        # ---- wall intersections ----
+        for wi in range(self._n_walls):
             normal = self._wall_normals[wi]  # (3,)
             d_pl = self._wall_d_plane[wi]  # scalar
             u_axis = self._wall_u_axes[wi]  # (3,)
@@ -520,18 +563,19 @@ class TorchRenderer(nn.Module):
         )
         fx = ox[:, None, None] + t_floor * dx
         fy = oy[:, None, None] + t_floor * dy
-        floor_hit = (
-            (t_floor > 1e-6)
-            & (t_floor < closest_t)
-            & (fx >= 0)
-            & (fx <= width)
-            & (fy >= 0)
-            & (fy <= depth)
-        )
+        if self._is_polygon:
+            floor_in_bounds = self._point_in_polygon(fx, fy)
+        else:
+            floor_in_bounds = (fx >= 0) & (fx <= width) & (fy >= 0) & (fy <= depth)
+        floor_hit = (t_floor > 1e-6) & (t_floor < closest_t) & floor_in_bounds
         if floor_hit.any():
             if self._has_floor_texture:
-                fu = fx / width
-                fv = fy / depth
+                if self._is_polygon:
+                    fu = (fx - self._bb_origin[0]) / width
+                    fv = (fy - self._bb_origin[1]) / depth
+                else:
+                    fu = fx / width
+                    fv = fy / depth
                 f_color = self._grid_sample_texture(self._floor_tex, fu, fv)
                 image = torch.where(floor_hit, f_color, image)
             else:
@@ -546,14 +590,11 @@ class TorchRenderer(nn.Module):
         )
         cx = ox[:, None, None] + t_ceil * dx
         cy = oy[:, None, None] + t_ceil * dy
-        ceil_hit = (
-            (t_ceil > 1e-6)
-            & (t_ceil < closest_t)
-            & (cx >= 0)
-            & (cx <= width)
-            & (cy >= 0)
-            & (cy <= depth)
-        )
+        if self._is_polygon:
+            ceil_in_bounds = self._point_in_polygon(cx, cy)
+        else:
+            ceil_in_bounds = (cx >= 0) & (cx <= width) & (cy >= 0) & (cy <= depth)
+        ceil_hit = (t_ceil > 1e-6) & (t_ceil < closest_t) & ceil_in_bounds
         if ceil_hit.any():
             image = torch.where(ceil_hit, ceiling_color, image)
 

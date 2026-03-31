@@ -13,12 +13,16 @@ def _sync_kernels(device):
         torch.cuda.synchronize()
     elif device == "mps":
         torch.mps.synchronize()
+    elif device == "xpu":
+        torch.xpu.synchronize()
     else:
         pass  # No synchronization needed for CPU
 
 
 def main(benchmark):
-    if torch.cuda.is_available():
+    if hasattr(torch, "xpu") and torch.xpu.is_available():
+        device = "xpu"
+    elif torch.cuda.is_available():
         device = "cuda"
     elif torch.backends.mps.is_available():
         device = "mps"
